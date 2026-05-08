@@ -95,7 +95,9 @@ const COPY = {
     joined: (name) => `${name} присоединился к комнате.`,
     returned: (name) => `${name} вернулся в комнату.`,
     hostChanged: (name) => `${name} теперь хост комнаты.`,
-    left: (name) => `${name} отключился.`
+    disconnected: (name) => `${name} отключился.`,
+    left: (name) => `${name} вышел из комнаты.`,
+    deleted: "Хост удалил комнату."
   },
   titles: [
     { title: "Машина юмора", note: "набрал больше всех очков" },
@@ -275,6 +277,88 @@ function scheduleEmptyRoomCleanup(room) {
       delete rooms[room.code];
     }
   }, 15 * 60 * 1000);
+}
+
+function assignNewHostIfNeeded(room, leavingPlayerId = null) {
+  if (room.hostId !== leavingPlayerId) return null;
+
+  const newHost = getConnectedPlayers(room)[0];
+  if (newHost) {
+    room.hostId = newHost.id;
+    return newHost;
+  }
+
+  return null;
+}
+
+function maybeAdvanceAfterPlayerLeave(room) {
+  const connectedPlayers = getConnectedPlayers(room);
+  if (connectedPlayers.length === 0) return;
+
+  if (room.state === "prompting" && connectedPlayers.every((player) => {
+    return room.prompts.some((prompt) => prompt.authorId === player.id);
+  })) {
+    moveToAnswering(room);
+    return;
+  }
+
+  if (room.state === "answering" && connectedPlayers.every((player) => {
+    return room.answers.some((answer) => answer.authorId === player.id);
+  })) {
+    moveToRevealing(room);
+    return;
+  }
+
+  if (room.state === "voting" && connectedPlayers.every((player) => {
+    const ownOnly = room.answers.every((answerItem) => answerItem.authorId === player.id);
+    return ownOnly || room.votes.some((vote) => vote.voterId === player.id);
+  })) {
+    finishVoting(room);
+  }
+}
+
+function leaveRoom(socket, notifySelf = true) {
+  const room = rooms[socket.data.roomCode];
+  const playerId = socket.data.playerId;
+  if (!room || !playerId) return;
+
+  const player = room.players.find((item) => item.id === playerId);
+  if (!player) return;
+
+  if (player.disconnectTimer) {
+    clearTimeout(player.disconnectTimer);
+    player.disconnectTimer = null;
+  }
+
+  socket.leave(room.code);
+  socket.data.roomCode = null;
+  socket.data.playerId = null;
+
+  if (room.state === "waiting") {
+    room.players = room.players.filter((item) => item.id !== playerId);
+  } else {
+    player.connected = false;
+    player.socketId = null;
+  }
+
+  const newHost = assignNewHostIfNeeded(room, playerId);
+
+  if (notifySelf) {
+    socket.emit("leftRoom");
+  }
+
+  if (room.players.length === 0 || getConnectedPlayers(room).length === 0) {
+    clearRoomTimer(room);
+    delete rooms[room.code];
+    return;
+  }
+
+  emitRoom(room);
+  emitNotice(room, COPY.notices.left(player.name), "leave");
+  if (newHost) {
+    emitNotice(room, COPY.notices.hostChanged(newHost.name), "host");
+  }
+  maybeAdvanceAfterPlayerLeave(room);
 }
 
 function resetRoundData(room) {
@@ -765,6 +849,20 @@ io.on("connection", (socket) => {
     emitRoom(room);
   });
 
+  socket.on("leaveRoom", () => {
+    leaveRoom(socket);
+  });
+
+  socket.on("deleteRoom", () => {
+    const room = rooms[socket.data.roomCode];
+    if (!ensureHost(socket, room)) return;
+
+    clearRoomTimer(room);
+    io.to(room.code).emit("roomDeleted", { message: COPY.notices.deleted });
+    io.in(room.code).socketsLeave(room.code);
+    delete rooms[room.code];
+  });
+
   socket.on("disconnect", () => {
     const room = rooms[socket.data.roomCode];
     const playerId = socket.data.playerId;
@@ -799,7 +897,7 @@ io.on("connection", (socket) => {
       if (newHost) {
         emitNotice(latest, COPY.notices.hostChanged(newHost.name), "host");
       }
-      emitNotice(latest, COPY.notices.left(latestPlayer.name), "leave");
+      emitNotice(latest, COPY.notices.disconnected(latestPlayer.name), "leave");
     }, RECONNECT_GRACE_MS);
   });
 });

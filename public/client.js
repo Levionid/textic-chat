@@ -44,7 +44,9 @@ const COPY = {
     copy: "Скопировать",
     nextRound: "Еще раунд, и точно всё",
     final: "Показать финал",
-    restart: "Вернуть всех в лобби"
+    restart: "Вернуть всех в лобби",
+    leaveRoom: "Выйти из комнаты",
+    deleteRoom: "Удалить комнату"
   },
   screens: {
     home: "Заходите в игру",
@@ -111,6 +113,10 @@ const COPY = {
     hostStartsVoting: "Ждем, пока хост запустит голосование.",
     hostDecision: "Ждем решение хоста.",
     hostCanRestart: "Хост может вернуть всех в лобби.",
+    confirmLeave: "Вы уверены выйти?",
+    confirmDelete: "Удалить комнату для всех игроков?",
+    leftRoom: "Вы вышли из комнаты.",
+    roomDeleted: "Комната удалена.",
     roomCreated: (code) => `Комната ${code} создана.`,
     joined: (code) => `Вы вошли в ${code}.`,
     reconnected: (code) => `Сессия в ${code} восстановлена.`,
@@ -363,16 +369,41 @@ function renderWaiting() {
   const onlineCount = currentRoom.players.filter((player) => player.connected).length;
   app.innerHTML = `
     <h2 class="panel-title">${COPY.screens.waiting}</h2>
-    <div class="room-code">${currentRoom.code}</div>
-    <div class="lobby-count">В лобби: ${onlineCount} из ${currentRoom.settings.maxPlayers}</div>
-    <div class="actions">
-      <button class="btn yellow" data-action="copy-code">${COPY.buttons.copyCode}</button>
-      ${isHost() ? `<button class="btn green" data-action="start-game">${COPY.buttons.startGame}</button>` : ""}
+    <div class="lobby-bento">
+      <section class="bento-card access-card">
+        <span class="bento-kicker">access key</span>
+        <div class="room-code">${currentRoom.code}</div>
+        <div class="lobby-count">В лобби: ${onlineCount} из ${currentRoom.settings.maxPlayers}</div>
+        <button class="btn ghost" data-action="copy-code">${COPY.buttons.copyCode}</button>
+      </section>
+
+      <section class="bento-card players-card">
+        <h3 class="section-title">${COPY.labels.players}</h3>
+        ${playersHtml()}
+      </section>
+
+      <section class="bento-card settings-card">
+        <h3 class="section-title">${COPY.labels.settings}</h3>
+        ${settingsSummary(currentRoom)}
+      </section>
+
+      <section class="bento-card host-card">
+        <span class="bento-kicker">control room</span>
+        <p class="meta">Хост запускает игру, когда все готовы.</p>
+        ${isHost() ? `<button class="btn primary" data-action="start-game">${COPY.buttons.startGame}</button>` : `<p class="prompt-box">${COPY.messages.hostDecision}</p>`}
+      </section>
     </div>
-    <h3 class="section-title">${COPY.labels.players}</h3>
-    ${playersHtml()}
-    <h3 class="section-title">${COPY.labels.settings}</h3>
-    ${settingsSummary(currentRoom)}
+  `;
+}
+
+function roomControlsHtml() {
+  if (!currentRoom) return "";
+
+  return `
+    <div class="room-controls">
+      <button class="btn ghost danger-lite" data-action="leave-room">${COPY.buttons.leaveRoom}</button>
+      ${isHost() ? `<button class="btn danger" data-action="delete-room">${COPY.buttons.deleteRoom}</button>` : ""}
+    </div>
   `;
 }
 
@@ -578,6 +609,7 @@ function render() {
   if (state === "voting") renderVoting();
   if (state === "scoreboard") renderScoreboard();
   if (state === "finished") renderFinished();
+  app.insertAdjacentHTML("beforeend", roomControlsHtml());
   startTimerView();
   restartScreenAnimation();
 }
@@ -676,7 +708,26 @@ app.addEventListener("click", (event) => {
 
   if (action === "next-round") socket.emit("nextRound");
   if (action === "restart-game") socket.emit("restartGame");
+
+  if (action === "leave-room") {
+    if (!window.confirm(COPY.messages.confirmLeave)) return;
+    socket.emit("leaveRoom");
+  }
+
+  if (action === "delete-room") {
+    if (!window.confirm(COPY.messages.confirmDelete)) return;
+    socket.emit("deleteRoom");
+  }
 });
+
+function returnHomeFromRoom(message) {
+  clearSavedRoom();
+  currentRoom = null;
+  previousState = null;
+  currentScreen = "home";
+  if (message) showToast(message);
+  render();
+}
 
 socket.on("connect", () => {
   showToast(COPY.messages.connected);
@@ -707,12 +758,7 @@ socket.on("rejoinedRoom", ({ code, sessionId: nextSessionId }) => {
 });
 
 socket.on("sessionExpired", () => {
-  clearSavedRoom();
-  currentRoom = null;
-  previousState = null;
-  currentScreen = "home";
-  showToast(COPY.messages.sessionExpired);
-  render();
+  returnHomeFromRoom(COPY.messages.sessionExpired);
 });
 
 socket.on("roomUpdate", (room) => {
@@ -733,6 +779,14 @@ socket.on("errorMessage", (message) => {
 
 socket.on("roomNotice", ({ message }) => {
   showToast(message);
+});
+
+socket.on("leftRoom", () => {
+  returnHomeFromRoom(COPY.messages.leftRoom);
+});
+
+socket.on("roomDeleted", ({ message } = {}) => {
+  returnHomeFromRoom(message || COPY.messages.roomDeleted);
 });
 
 socket.on("disconnect", () => {
