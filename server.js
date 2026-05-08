@@ -178,7 +178,8 @@ function normalizeSettings(raw = {}) {
       soundsEnabled: raw.soundsEnabled !== false,
       promptMode: raw.promptMode === "auto" ? "auto" : "manual",
       assignmentMode: raw.assignmentMode === "same" ? "same" : "different",
-      maxPlayers: clampNumber(raw.maxPlayers, 2, 12, 6)
+      maxPlayers: clampNumber(raw.maxPlayers, 2, 12, 6),
+      publicLobby: raw.publicLobby !== false
     }
   };
 }
@@ -222,6 +223,25 @@ function publicRoom(room) {
 
 function emitRoom(room) {
   io.to(room.code).emit("roomUpdate", publicRoom(room));
+}
+
+function getOpenRooms() {
+  return Object.values(rooms)
+    .filter((room) => room.state === "waiting" && room.settings.publicLobby)
+    .map((room) => ({
+      code: room.code,
+      hostName: getPlayerName(room, room.hostId),
+      playersCount: getConnectedPlayers(room).length,
+      maxPlayers: room.settings.maxPlayers,
+      maxRounds: room.maxRounds,
+      promptMode: room.settings.promptMode,
+      assignmentMode: room.settings.assignmentMode
+    }))
+    .sort((a, b) => a.code.localeCompare(b.code));
+}
+
+function emitOpenRooms() {
+  io.emit("openRoomsUpdate", getOpenRooms());
 }
 
 function emitError(socket, message) {
@@ -275,6 +295,7 @@ function scheduleEmptyRoomCleanup(room) {
     if (latest && getConnectedPlayers(latest).length === 0) {
       clearRoomTimer(latest);
       delete rooms[room.code];
+      emitOpenRooms();
     }
   }, 15 * 60 * 1000);
 }
@@ -350,10 +371,12 @@ function leaveRoom(socket, notifySelf = true) {
   if (room.players.length === 0 || getConnectedPlayers(room).length === 0) {
     clearRoomTimer(room);
     delete rooms[room.code];
+    emitOpenRooms();
     return;
   }
 
   emitRoom(room);
+  emitOpenRooms();
   emitNotice(room, COPY.notices.left(player.name), "leave");
   if (newHost) {
     emitNotice(room, COPY.notices.hostChanged(newHost.name), "host");
@@ -666,6 +689,7 @@ io.on("connection", (socket) => {
     attachPlayerToSocket(socket, room, room.players[0]);
     socket.emit("roomCreated", { code, sessionId: cleanSession });
     emitRoom(room);
+    emitOpenRooms();
   });
 
   socket.on("joinRoom", ({ code, name, sessionId } = {}) => {
@@ -684,6 +708,7 @@ io.on("connection", (socket) => {
       attachPlayerToSocket(socket, room, existingPlayer);
       socket.emit("joinedRoom", { code: cleanCode, sessionId: cleanSession, reconnected: true });
       emitRoom(room);
+      emitOpenRooms();
       if (wasDisconnected) {
         emitNotice(room, COPY.notices.returned(existingPlayer.name), "reconnect", socket);
       }
@@ -701,6 +726,11 @@ io.on("connection", (socket) => {
     socket.emit("joinedRoom", { code: cleanCode, sessionId: cleanSession, reconnected: false });
     emitRoom(room);
     emitNotice(room, COPY.notices.joined(cleanName), "join", socket);
+    emitOpenRooms();
+  });
+
+  socket.on("listOpenRooms", () => {
+    socket.emit("openRoomsUpdate", getOpenRooms());
   });
 
   socket.on("reconnectRoom", ({ code, name, sessionId } = {}) => {
@@ -740,6 +770,7 @@ io.on("connection", (socket) => {
     });
     room.bestJokesHistory = [];
     startRound(room);
+    emitOpenRooms();
   });
 
   socket.on("submitPrompt", ({ text } = {}) => {
@@ -847,6 +878,7 @@ io.on("connection", (socket) => {
     room.bestJokesHistory = [];
     room.titles = [];
     emitRoom(room);
+    emitOpenRooms();
   });
 
   socket.on("leaveRoom", () => {
@@ -861,6 +893,7 @@ io.on("connection", (socket) => {
     io.to(room.code).emit("roomDeleted", { message: COPY.notices.deleted });
     io.in(room.code).socketsLeave(room.code);
     delete rooms[room.code];
+    emitOpenRooms();
   });
 
   socket.on("disconnect", () => {

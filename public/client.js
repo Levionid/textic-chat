@@ -21,6 +21,7 @@ const COPY = {
     roomCode: "Код лобби",
     players: "Игроки",
     settings: "Настройки игры",
+    openRooms: "Открытые лобби",
     progress: "Прогресс",
     roundVotes: "Результаты голосования",
     history: "Лучшие шутки",
@@ -62,7 +63,7 @@ const COPY = {
     finished: "Финал игры"
   },
   placeholders: {
-    name: "Например, Маша",
+    name: "Например, Артур",
     roomCode: "ABCD",
     prompt: "Когда хост сказал 'быстро сыграем один раунд'...",
     answer: "...и все поняли, что вечер только начинается."
@@ -79,6 +80,7 @@ const COPY = {
     assignmentDifferent: "Каждый добивает чужую фразу",
     assignmentSame: "Все добивают одну и ту же фразу",
     maxPlayers: "Максимум игроков",
+    publicLobby: "Показывать комнату в списке открытых лобби",
     anonymous: "Скрывать авторов до итогов раунда",
     sounds: "Звуки при раскрытии"
   },
@@ -107,6 +109,7 @@ const COPY = {
     sessionExpired: "Старая комната больше недоступна.",
     enterName: "Сначала введите ник.",
     enterCode: "Введите код комнаты.",
+    noOpenRooms: "Пока нет открытых лобби. Можно создать свое.",
     promptSubmitted: "Начало отправлено. Ждем остальных.",
     answerSubmitted: "Концовка отправлена. Ждем остальных.",
     voteSubmitted: "Голос принят. Ждем остальных.",
@@ -130,6 +133,7 @@ let myName = localStorage.getItem(STORAGE_KEYS.playerName) || "";
 let previousState = null;
 let timerInterval = null;
 let sessionId = getOrCreateSessionId();
+let openRooms = [];
 
 function getOrCreateSessionId() {
   const saved = localStorage.getItem(STORAGE_KEYS.sessionId);
@@ -291,7 +295,9 @@ function playWinSound() {
 function renderHome() {
   app.innerHTML = `
     <h2 class="panel-title">${COPY.screens.home}</h2>
-    <div class="grid">
+    <div class="home-layout">
+      <section class="home-panel">
+        <div class="grid">
       <label class="field">
         <span>${COPY.labels.name}</span>
         <input id="nameInput" maxlength="32" placeholder="${COPY.placeholders.name}" value="${escapeHtml(myName)}">
@@ -300,10 +306,36 @@ function renderHome() {
         <span>${COPY.labels.roomCode}</span>
         <input id="roomCodeInput" maxlength="8" placeholder="${COPY.placeholders.roomCode}">
       </label>
+        </div>
+        <div class="actions">
+          <button class="btn primary" data-action="open-create">${COPY.buttons.openCreate}</button>
+          <button class="btn yellow" data-action="join-room">${COPY.buttons.joinRoom}</button>
+        </div>
+      </section>
+      <section class="home-panel">
+        <h3 class="section-title">${COPY.labels.openRooms}</h3>
+        ${openRoomsHtml()}
+      </section>
     </div>
-    <div class="actions">
-      <button class="btn primary" data-action="open-create">${COPY.buttons.openCreate}</button>
-      <button class="btn yellow" data-action="join-room">${COPY.buttons.joinRoom}</button>
+  `;
+}
+
+function openRoomsHtml() {
+  if (!openRooms.length) {
+    return `<p class="meta">${COPY.messages.noOpenRooms}</p>`;
+  }
+
+  return `
+    <div class="open-rooms">
+      ${openRooms.map((room) => `
+        <article class="open-room">
+          <div>
+            <div class="open-room-code">${escapeHtml(room.code)}</div>
+            <p class="meta">Хост: ${escapeHtml(room.hostName)} · ${room.playersCount}/${room.maxPlayers} игроков · ${room.maxRounds} раунд.</p>
+          </div>
+          <button class="btn ghost" data-action="join-open-room" data-room-code="${escapeHtml(room.code)}">Войти</button>
+        </article>
+      `).join("")}
     </div>
   `;
 }
@@ -331,6 +363,7 @@ function renderCreateRoom() {
       <label class="field"><span>${COPY.settings.maxPlayers}</span><input id="maxPlayers" type="number" min="2" max="12" value="6"></label>
       <label class="check-row"><input id="anonymousMode" type="checkbox"> ${COPY.settings.anonymous}</label>
       <label class="check-row"><input id="soundsEnabled" type="checkbox" checked> ${COPY.settings.sounds}</label>
+      <label class="check-row"><input id="publicLobby" type="checkbox" checked> ${COPY.settings.publicLobby}</label>
     </div>
     <div class="actions">
       <button class="btn ghost" data-action="home">${COPY.buttons.back}</button>
@@ -371,7 +404,7 @@ function renderWaiting() {
     <h2 class="panel-title">${COPY.screens.waiting}</h2>
     <div class="lobby-bento">
       <section class="bento-card access-card">
-        <span class="bento-kicker">access key</span>
+        <span class="bento-kicker">код приглашения</span>
         <div class="room-code">${currentRoom.code}</div>
         <div class="lobby-count">В лобби: ${onlineCount} из ${currentRoom.settings.maxPlayers}</div>
         <button class="btn ghost" data-action="copy-code">${COPY.buttons.copyCode}</button>
@@ -637,7 +670,8 @@ function readSettings() {
     soundsEnabled: document.getElementById("soundsEnabled").checked,
     promptMode: document.getElementById("promptMode").value,
     assignmentMode: document.getElementById("assignmentMode").value,
-    maxPlayers: document.getElementById("maxPlayers").value
+    maxPlayers: document.getElementById("maxPlayers").value,
+    publicLobby: document.getElementById("publicLobby").checked
   };
 }
 
@@ -668,6 +702,12 @@ app.addEventListener("click", (event) => {
     if (!name) return showToast(COPY.messages.enterName);
     if (!code) return showToast(COPY.messages.enterCode);
     socket.emit("joinRoom", { name, code, sessionId });
+  }
+
+  if (action === "join-open-room") {
+    const name = readName();
+    if (!name) return showToast(COPY.messages.enterName);
+    socket.emit("joinRoom", { name, code: button.dataset.roomCode, sessionId });
   }
 
   if (action === "copy-code") copyText(currentRoom.code);
@@ -731,6 +771,7 @@ function returnHomeFromRoom(message) {
 
 socket.on("connect", () => {
   showToast(COPY.messages.connected);
+  socket.emit("listOpenRooms");
   const savedCode = localStorage.getItem(STORAGE_KEYS.roomCode);
   const savedName = localStorage.getItem(STORAGE_KEYS.playerName);
   if (savedCode && savedName) {
@@ -779,6 +820,13 @@ socket.on("errorMessage", (message) => {
 
 socket.on("roomNotice", ({ message }) => {
   showToast(message);
+});
+
+socket.on("openRoomsUpdate", (rooms) => {
+  openRooms = rooms || [];
+  if (!currentRoom && currentScreen === "home") {
+    render();
+  }
 });
 
 socket.on("leftRoom", () => {
