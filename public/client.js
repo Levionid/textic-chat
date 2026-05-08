@@ -15,30 +15,30 @@ const STORAGE_KEYS = {
 
 const COPY = {
   appTitle: "Добей фразу",
-  tagline: "симулятор панчлайна для своих",
+  tagline: "игра для компании друзей",
   labels: {
-    name: "Как тебя подписать в истории",
+    name: "Ваш ник",
     roomCode: "Код лобби",
-    players: "Кто в чате",
-    settings: "Настройки хаоса",
-    progress: "Прогресс панчлайна",
-    roundVotes: "Куда ушли голоса",
-    history: "Зал славы локалок",
-    titles: "Посмертные звания",
-    finalTitle: "Финальный созвон"
+    players: "Игроки",
+    settings: "Настройки игры",
+    progress: "Прогресс",
+    roundVotes: "Результаты голосования",
+    history: "Лучшие шутки",
+    titles: "Титулы",
+    finalTitle: "Финал"
   },
   buttons: {
     openCreate: "Собрать лобби",
-    joinRoom: "Залететь по коду",
+    joinRoom: "Войти по коду",
     back: "Назад в меню",
-    createRoom: "Создать движ",
+    createRoom: "Создать комнату",
     copyCode: "Скопировать шифр",
-    startGame: "Запустить хаос",
+    startGame: "Начать игру",
     submitPrompt: "Зафиксить начало",
-    submitAnswer: "Запушить панчлайн",
-    startVoting: "Открыть суд чата",
+    submitAnswer: "Отправить концовку",
+    startVoting: "Перейти к голосованию",
     vote: "Отдать голос",
-    ownAnswer: "Это твой панч",
+    ownAnswer: "Это ваша концовка",
     copyJoke: "Утащить шутку",
     copyBest: "Утащить топ",
     copy: "Скопировать",
@@ -47,74 +47,74 @@ const COPY = {
     restart: "Вернуть всех в лобби"
   },
   screens: {
-    home: "Залетай, локалка открыта",
+    home: "Заходите в игру",
     create: "Панель хоста",
-    waiting: "Лобби греет сокеты",
+    waiting: "Лобби готовится",
     prompting: (round) => `Раунд ${round}: кинь начало`,
     answering: "Добей фразу, пока не передумал",
-    revealing: "Панчлайны вылезли из билда",
-    voting: "Суд чата начинается",
+    revealing: "Готовые шутки",
+    voting: "Голосование",
     scoreboard: (round) => `После раунда ${round}: кто смешной`,
     bestSingle: "Топовая шутка раунда",
     bestMultiple: "Топовые шутки раунда",
-    finished: "Финал: сервер все видел"
+    finished: "Финал игры"
   },
   placeholders: {
-    name: "Например, Деплойный шаман",
+    name: "Например, Маша",
     roomCode: "ABCD",
     prompt: "Когда хост сказал 'быстро сыграем один раунд'...",
-    answer: "...и textarea попросила отпуск."
+    answer: "...и все поняли, что вечер только начинается."
   },
   settings: {
-    rounds: "Сколько раундов переживем",
+    rounds: "Количество раундов",
     promptTimer: "Таймер на начало, сек.",
-    answerTimer: "Таймер на панчлайн, сек.",
-    voteTimer: "Таймер суда чата, сек.",
-    promptMode: "Кто рожает начала",
+    answerTimer: "Таймер на концовку, сек.",
+    voteTimer: "Таймер голосования, сек.",
+    promptMode: "Режим начал",
     promptManual: "Игроки сами кидают начала",
-    promptAuto: "Сервер подкидывает инфмат-мемы",
+    promptAuto: "Игра предлагает начала автоматически",
     assignmentMode: "Как раздаем фразы",
     assignmentDifferent: "Каждый добивает чужую фразу",
-    assignmentSame: "Все бьют в одну фразу",
-    maxPlayers: "Сколько людей влезет",
-    anonymous: "Анонимный режим до вскрытия",
-    sounds: "Бипы при раскрытии"
+    assignmentSame: "Все добивают одну и ту же фразу",
+    maxPlayers: "Максимум игроков",
+    anonymous: "Скрывать авторов до итогов раунда",
+    sounds: "Звуки при раскрытии"
   },
   status: [
-    "Ждем, пока кто-то родит панчлайн...",
-    "Кто-то завис на этапе юмора...",
-    "Сервер делает вид, что все под контролем...",
-    "Один игрок спорит с textarea...",
-    "Собираем локалки в оперативке...",
+    "Ждем, пока остальные допишут свои варианты...",
+    "Кто-то еще думает над шуткой...",
+    "Почти готово, осталось дождаться пары ответов...",
+    "Игра ждет последних игроков...",
+    "Собираем ответы перед следующим шагом...",
     "Проверяем, не ушел ли хост за чаем...",
-    "Комната дышит, панчлайны компилируются...",
-    "Кто-то ищет смешное между дедлайном и стыдом...",
-    "Realtime крутится, шутки дозревают...",
-    "Ожидаем последний коммит в юмор..."
+    "Шутки уже почти готовы...",
+    "Кто-то ищет самую удачную формулировку...",
+    "Еще немного ожидания...",
+    "Остался последний штрих."
   ],
   empty: {
-    history: "История пока пустая. Локалки еще не прошли модерацию судьбой.",
-    best: "Топа нет. Раунд был философским.",
-    promptMissing: "Фраза где-то между сервером и вайбом.",
-    winnerMissing: "Победитель не найден. Похоже, все стали легендами."
+    history: "История пока пустая. Лучшие шутки появятся после первого раунда.",
+    best: "Лучшей шутки пока нет.",
+    promptMissing: "Фраза скоро появится.",
+    winnerMissing: "Победитель не найден."
   },
   messages: {
-    copied: "Скопировано. Можно нести в чат.",
-    connected: "Сокет жив, можно шуметь.",
-    disconnected: "Связь моргнула. Держим панчлайн.",
-    sessionExpired: "Старая комната растворилась в оперативке.",
-    enterName: "Сначала ник. Сервер не читает мысли.",
-    enterCode: "Нужен код лобби. Без шифра никак.",
-    promptSubmitted: "Начало улетело. Ждем остальных мемологов.",
-    answerSubmitted: "Панчлайн запушен. Ждем, пока остальные догонят.",
-    voteSubmitted: "Голос ушел в историю. Ждем суд чата.",
-    hostStartsVoting: "Ждем, пока хост откроет суд чата.",
-    hostDecision: "Ждем решение хоста. Власть у сокета.",
+    copied: "Скопировано.",
+    connected: "Подключение восстановлено.",
+    disconnected: "Соединение потеряно. Пробуем переподключиться.",
+    sessionExpired: "Старая комната больше недоступна.",
+    enterName: "Сначала введите ник.",
+    enterCode: "Введите код комнаты.",
+    promptSubmitted: "Начало отправлено. Ждем остальных.",
+    answerSubmitted: "Концовка отправлена. Ждем остальных.",
+    voteSubmitted: "Голос принят. Ждем остальных.",
+    hostStartsVoting: "Ждем, пока хост запустит голосование.",
+    hostDecision: "Ждем решение хоста.",
     hostCanRestart: "Хост может вернуть всех в лобби.",
-    roomCreated: (code) => `Лобби ${code} собрано.`,
-    joined: (code) => `Ты залетел в ${code}.`,
-    reconnected: (code) => `Сессия ${code} поднялась после F5.`,
-    returned: (code) => `Ты вернулся в ${code}. F5 не победил.`
+    roomCreated: (code) => `Комната ${code} создана.`,
+    joined: (code) => `Вы вошли в ${code}.`,
+    reconnected: (code) => `Сессия в ${code} восстановлена.`,
+    returned: (code) => `Вы вернулись в ${code}.`
   }
 };
 
@@ -203,7 +203,7 @@ function hasVoted() {
 
 function timerHtml() {
   if (!currentRoom?.timerEndsAt) return "";
-  return `<div class="timer" id="timerText">До автосейва: ${getRemainingSeconds()} сек.</div>`;
+  return `<div class="timer" id="timerText">Осталось: ${getRemainingSeconds()} сек.</div>`;
 }
 
 function getRemainingSeconds() {
@@ -216,7 +216,7 @@ function startTimerView() {
   timerInterval = setInterval(() => {
     const node = document.getElementById("timerText");
     if (node && currentRoom?.timerEndsAt) {
-      node.textContent = `До автосейва: ${getRemainingSeconds()} сек.`;
+      node.textContent = `Осталось: ${getRemainingSeconds()} сек.`;
     }
   }, 500);
 }
@@ -335,13 +335,13 @@ function renderCreateRoom() {
 
 function settingsSummary(room) {
   const promptMode = room.settings.promptMode === "auto" ? "сервер кидает начала" : "свои начала от игроков";
-  const assignmentMode = room.settings.assignmentMode === "same" ? "один мем на всех" : "каждому чужая боль";
+  const assignmentMode = room.settings.assignmentMode === "same" ? "одна фраза для всех" : "каждому чужая фраза";
   const anonymous = room.settings.anonymousMode ? "авторы скрыты до суда" : "авторы палятся сразу";
   return `
     <ul class="settings-list">
-      <li>${room.maxRounds} раундов, мест в тусовке: ${room.settings.maxPlayers}</li>
+      <li>${room.maxRounds} раундов, максимум игроков: ${room.settings.maxPlayers}</li>
       <li>${promptMode}, ${assignmentMode}, ${anonymous}</li>
-      <li>Таймеры: начало ${room.timers.promptSeconds}с, панч ${room.timers.answerSeconds}с, суд ${room.timers.voteSeconds}с</li>
+      <li>Таймеры: начало ${room.timers.promptSeconds}с, концовка ${room.timers.answerSeconds}с, голосование ${room.timers.voteSeconds}с</li>
     </ul>
   `;
 }
@@ -351,8 +351,8 @@ function playersHtml() {
     <div class="players">
       ${currentRoom.players.map((player) => `
         <div class="pill ${player.connected ? "" : "disconnected"}">
-          <span>${escapeHtml(player.name)} ${player.id === currentRoom.hostId ? '<span class="badge">хост сокета</span>' : ""}</span>
-          <span>${player.connected ? "в комнате" : "ушел в F5"}</span>
+          <span>${escapeHtml(player.name)} ${player.id === currentRoom.hostId ? '<span class="badge">хост</span>' : ""}</span>
+          <span>${player.connected ? "в комнате" : "отключился"}</span>
         </div>
       `).join("")}
     </div>
@@ -364,7 +364,7 @@ function renderWaiting() {
   app.innerHTML = `
     <h2 class="panel-title">${COPY.screens.waiting}</h2>
     <div class="room-code">${currentRoom.code}</div>
-    <div class="lobby-count">В лобби: ${onlineCount} из ${currentRoom.settings.maxPlayers}, хаос почти готов</div>
+    <div class="lobby-count">В лобби: ${onlineCount} из ${currentRoom.settings.maxPlayers}</div>
     <div class="actions">
       <button class="btn yellow" data-action="copy-code">${COPY.buttons.copyCode}</button>
       ${isHost() ? `<button class="btn green" data-action="start-game">${COPY.buttons.startGame}</button>` : ""}
@@ -408,13 +408,13 @@ function renderAnswering() {
       <div class="actions"><button class="btn primary" data-action="submit-answer">${COPY.buttons.submitAnswer}</button></div>
     `}
     <h3 class="section-title">${COPY.labels.progress}</h3>
-    <p class="meta">${currentRoom.answers.length} из ${currentRoom.players.filter((p) => p.connected).length} запушили панч. ${randomWaitingMessage(currentRoom.answers.length + 2)}</p>
+    <p class="meta">${currentRoom.answers.length} из ${currentRoom.players.filter((p) => p.connected).length} отправили концовку. ${randomWaitingMessage(currentRoom.answers.length + 2)}</p>
   `;
 }
 
 function jokeText(answer, revealAuthor) {
   const prompt = getPrompt(answer.promptId);
-  const author = revealAuthor ? `\n\n- автор панча: ${getPlayerName(answer.authorId)}` : "";
+  const author = revealAuthor ? `\n\n- автор: ${getPlayerName(answer.authorId)}` : "";
   return `${prompt?.text || ""}\n${answer.text}${author}`;
 }
 
@@ -426,7 +426,7 @@ function jokesHtml({ voting = false, revealAuthor = false } = {}) {
         const own = answer.authorId === getMyId();
         return `
           <article class="joke">
-            <div class="meta">Панч ${index + 1}${revealAuthor ? ` · автор: ${escapeHtml(getPlayerName(answer.authorId))}` : " · автор скрыт до суда"}</div>
+            <div class="meta">Шутка ${index + 1}${revealAuthor ? ` · автор: ${escapeHtml(getPlayerName(answer.authorId))}` : " · автор скрыт до итогов"}</div>
             <div class="joke-start">${escapeHtml(prompt?.text || "")}</div>
             <div class="joke-end">${escapeHtml(answer.text)}</div>
             <div class="actions">
@@ -488,7 +488,7 @@ function scoresHtml() {
       ${[...currentRoom.players].sort((a, b) => b.score - a.score).map((player) => `
         <div class="score-row">
           <span>${escapeHtml(player.name)}</span>
-          <span>${player.score} мем-очк.</span>
+          <span>${player.score} очк.</span>
         </div>
       `).join("")}
     </div>
@@ -501,7 +501,7 @@ function renderScoreboard() {
     ? currentRoom.lastBestJokes
     : (currentRoom.lastBestJoke ? [currentRoom.lastBestJoke] : []);
   const tieText = currentRoom.lastRoundTie
-    ? `<div class="tie-banner">Ничья в чате: ${currentRoom.lastRoundTie.winnersCount} панча взяли по ${currentRoom.lastRoundTie.votesCount} голос.</div>`
+    ? `<div class="tie-banner">Ничья: ${currentRoom.lastRoundTie.winnersCount} шутки набрали по ${currentRoom.lastRoundTie.votesCount} голос.</div>`
     : "";
 
   app.innerHTML = `
@@ -512,7 +512,7 @@ function renderScoreboard() {
     <div class="jokes">
       ${currentRoom.lastRoundResults.map((result) => `
         <article class="joke ${result.isRoundWinner ? "winner-joke" : ""}">
-          <div class="meta">Автор панча: ${escapeHtml(result.authorName)} · голосов: ${result.votesCount}${result.isRoundWinner ? " · топ раунда" : ""}</div>
+          <div class="meta">Автор: ${escapeHtml(result.authorName)} · голосов: ${result.votesCount}${result.isRoundWinner ? " · лучшая шутка раунда" : ""}</div>
           <div class="joke-start">${escapeHtml(result.promptText)}</div>
           <div class="joke-end">${escapeHtml(result.answerText)}</div>
         </article>
@@ -666,12 +666,12 @@ app.addEventListener("click", (event) => {
       : (currentRoom.lastBestJoke ? [currentRoom.lastBestJoke] : []);
     const joke = bestJokes[Number(button.dataset.bestIndex || 0)];
     if (!joke) return;
-    copyText(`${joke.promptText}\n${joke.answerText}\n\n- автор панча: ${joke.authorName}`);
+    copyText(`${joke.promptText}\n${joke.answerText}\n\n- автор: ${joke.authorName}`);
   }
 
   if (action === "copy-history") {
     const joke = currentRoom.bestJokesHistory[Number(button.dataset.historyIndex)];
-    copyText(`${joke.promptText}\n${joke.answerText}\n\n- автор панча: ${joke.authorName}`);
+    copyText(`${joke.promptText}\n${joke.answerText}\n\n- автор: ${joke.authorName}`);
   }
 
   if (action === "next-round") socket.emit("nextRound");
