@@ -1,7 +1,7 @@
 const BACKEND_URL =
   location.hostname === "localhost" || location.hostname === "127.0.0.1"
     ? "http://localhost:3000"
-    : "https://PASTE_RENDER_BACKEND_URL_HERE";
+    : "https://textic-chat.onrender.com";
 
 const socket = io(BACKEND_URL);
 
