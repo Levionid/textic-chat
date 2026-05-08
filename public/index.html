@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Добей фразу</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="bg-shape shape-one"></div>
+  <div class="bg-shape shape-two"></div>
+  <div class="bg-shape shape-three"></div>
+
+  <main class="app">
+    <section class="hero">
+      <p class="eyebrow">party-game для друзей</p>
+      <h1>Добей фразу</h1>
+      <p class="subtitle">Пиши начала, добивай чужие фразы, голосуй за самые смешные концовки.</p>
+    </section>
+
+    <section id="app" class="game-card"></section>
+  </main>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="client.js"></script>
+</body>
+</html>
