@@ -22,6 +22,7 @@ const COPY = {
     players: "Игроки",
     settings: "Настройки игры",
     openRooms: "Открытые лобби",
+    openRoomsLead: "Выберите комнату из списка или обновите список, если кто-то только что создал лобби.",
     progress: "Прогресс",
     roundVotes: "Результаты голосования",
     history: "Лучшие шутки",
@@ -30,6 +31,8 @@ const COPY = {
   },
   buttons: {
     openCreate: "Собрать лобби",
+    browseRooms: "Смотреть открытые лобби",
+    refreshRooms: "Обновить список",
     joinRoom: "Войти по коду",
     back: "Назад в меню",
     createRoom: "Создать комнату",
@@ -51,6 +54,7 @@ const COPY = {
   },
   screens: {
     home: "Заходите в игру",
+    lobbies: "Открытые лобби",
     create: "Панель хоста",
     waiting: "Лобби готовится",
     prompting: (round) => `Раунд ${round}: кинь начало`,
@@ -295,8 +299,9 @@ function playWinSound() {
 function renderHome() {
   app.innerHTML = `
     <h2 class="panel-title">${COPY.screens.home}</h2>
-    <div class="home-layout">
-      <section class="home-panel">
+    <div class="home-layout home-layout-single">
+      <section class="home-panel home-hero-panel">
+        <p class="meta">Соберите свою комнату или зайдите к друзьям по коду. Открытые лобби теперь живут на отдельном экране.</p>
         <div class="grid">
       <label class="field">
         <span>${COPY.labels.name}</span>
@@ -309,34 +314,71 @@ function renderHome() {
         </div>
         <div class="actions">
           <button class="btn primary" data-action="open-create">${COPY.buttons.openCreate}</button>
+          <button class="btn ghost" data-action="open-lobbies">${COPY.buttons.browseRooms}</button>
           <button class="btn yellow" data-action="join-room">${COPY.buttons.joinRoom}</button>
         </div>
-      </section>
-      <section class="home-panel">
-        <h3 class="section-title">${COPY.labels.openRooms}</h3>
-        ${openRoomsHtml()}
       </section>
     </div>
   `;
 }
 
-function openRoomsHtml() {
+function openRoomsHtml({ compact = false } = {}) {
   if (!openRooms.length) {
-    return `<p class="meta">${COPY.messages.noOpenRooms}</p>`;
+    return `
+      <div class="empty-lobbies">
+        <p class="meta">${COPY.messages.noOpenRooms}</p>
+        <button class="btn ghost" data-action="refresh-lobbies">${COPY.buttons.refreshRooms}</button>
+      </div>
+    `;
   }
 
   return `
-    <div class="open-rooms">
+    <div class="open-rooms ${compact ? "open-rooms-compact" : ""}">
       ${openRooms.map((room) => `
-        <article class="open-room">
-          <div>
+        <article class="open-room" data-action="join-open-room" data-room-code="${escapeHtml(room.code)}" tabindex="0" role="button" aria-label="Войти в лобби ${escapeHtml(room.code)}">
+          <div class="open-room-main">
             <div class="open-room-code">${escapeHtml(room.code)}</div>
-            <p class="meta">Хост: ${escapeHtml(room.hostName)} · ${room.playersCount}/${room.maxPlayers} игроков · ${room.maxRounds} раунд.</p>
+            <p class="meta">Хост: ${escapeHtml(room.hostName)}</p>
+          </div>
+          <div class="open-room-stats">
+            <span>${room.playersCount}/${room.maxPlayers} игроков</span>
+            <span>${room.maxRounds} раунд.</span>
+            <span>${room.promptMode === "auto" ? "авто-начала" : "свои начала"}</span>
           </div>
           <button class="btn ghost" data-action="join-open-room" data-room-code="${escapeHtml(room.code)}">Войти</button>
         </article>
       `).join("")}
     </div>
+  `;
+}
+
+function renderLobbyBrowser() {
+  app.innerHTML = `
+    <div class="screen-head">
+      <div>
+        <h2 class="panel-title">${COPY.screens.lobbies}</h2>
+        <p class="meta">${COPY.labels.openRoomsLead}</p>
+      </div>
+      <div class="lobby-browser-count">${openRooms.length} ${openRooms.length === 1 ? "комната" : "комнат"}</div>
+    </div>
+    <section class="home-panel lobby-browser-panel">
+      <div class="grid lobby-browser-controls">
+        <label class="field">
+          <span>${COPY.labels.name}</span>
+          <input id="nameInput" maxlength="32" placeholder="${COPY.placeholders.name}" value="${escapeHtml(myName)}">
+        </label>
+        <label class="field">
+          <span>${COPY.labels.roomCode}</span>
+          <input id="roomCodeInput" maxlength="8" placeholder="${COPY.placeholders.roomCode}">
+        </label>
+      </div>
+      <div class="actions">
+        <button class="btn yellow" data-action="join-room">${COPY.buttons.joinRoom}</button>
+        <button class="btn ghost" data-action="refresh-lobbies">${COPY.buttons.refreshRooms}</button>
+        <button class="btn ghost" data-action="home">${COPY.buttons.back}</button>
+      </div>
+      ${openRoomsHtml()}
+    </section>
   `;
 }
 
@@ -629,6 +671,7 @@ function renderFinished() {
 function render() {
   if (!currentRoom) {
     if (currentScreen === "create") renderCreateRoom();
+    else if (currentScreen === "lobbies") renderLobbyBrowser();
     else renderHome();
     restartScreenAnimation();
     return;
@@ -690,6 +733,19 @@ app.addEventListener("click", (event) => {
     if (!readName()) return showToast(COPY.messages.enterName);
     currentScreen = "create";
     render();
+  }
+
+  if (action === "open-lobbies") {
+    readName();
+    currentScreen = "lobbies";
+    socket.emit("listOpenRooms");
+    render();
+  }
+
+  if (action === "refresh-lobbies") {
+    readName();
+    socket.emit("listOpenRooms");
+    showToast("Список лобби обновляется.");
   }
 
   if (action === "create-room") {
@@ -824,7 +880,7 @@ socket.on("roomNotice", ({ message }) => {
 
 socket.on("openRoomsUpdate", (rooms) => {
   openRooms = rooms || [];
-  if (!currentRoom && currentScreen === "home") {
+  if (!currentRoom && currentScreen === "lobbies") {
     render();
   }
 });
