@@ -607,7 +607,11 @@ function formatAudioTime(seconds) {
 }
 
 function voiceBarsHtml(count = 36) {
-  return Array.from({ length: count }, (_, index) => `<span style="--i:${index}"></span>`).join("");
+  const pattern = [9, 18, 13, 24, 12, 29, 16, 21, 11, 26, 15, 31, 18, 23, 10, 28, 14, 20, 12, 25, 17, 30, 13, 22, 9, 27, 16, 24, 11, 19, 14, 29, 18, 21, 12, 26, 15, 30, 10, 23, 17, 28, 13, 20, 11, 25, 16, 31, 14, 22, 9, 27, 18, 24, 12, 29, 15, 21, 10, 26];
+  return Array.from({ length: count }, (_, index) => {
+    const height = pattern[index % pattern.length];
+    return `<span style="--i:${index};--bar-h:${height}px"></span>`;
+  }).join("");
 }
 
 function audioPlayerHtml(audio, { compact = false } = {}) {
@@ -1847,7 +1851,7 @@ function renderFinalSummary() {
 
     <section class="stage-section final-section">
       <h3 class="section-title centered-title">${COPY.labels.personalPodium}</h3>
-      <div class="final-awards-grid">
+      <div class="final-awards-grid personal-podium-grid podium-count-${Math.min((summary.podium || []).length, 3)}">
         ${(summary.podium || []).map((player) => personalAwardCardHtml(player)).join("")}
       </div>
     </section>

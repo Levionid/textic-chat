@@ -4484,3 +4484,141 @@ body.has-room-controls .toast {
     padding: 15px;
   }
 }
+
+/* === Patch 17: visible seekable voice bars + centered 2-card podium + fixed submitted width === */
+.input-stage-panel.no-shell-panel {
+  width: min(780px, 100%) !important;
+}
+
+.input-stage-panel.no-shell-panel > textarea,
+.input-stage-panel.no-shell-panel > .submitted-draft-card,
+.input-stage-panel.no-shell-panel > .audio-tools,
+.input-stage-panel.no-shell-panel > .progress-card,
+.input-stage-panel.no-shell-panel > .prompt-box {
+  width: min(760px, 100%) !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+.input-stage-panel.no-shell-panel > .timer {
+  width: min(760px, 100%) !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  justify-content: center;
+}
+
+.submitted-draft-card {
+  max-width: 760px !important;
+  justify-self: center !important;
+}
+
+.voice-message {
+  overflow: hidden !important;
+}
+
+.voice-body {
+  min-width: 0 !important;
+  width: 100% !important;
+}
+
+.voice-wave,
+.voice-wave[data-voice-seek] {
+  display: flex !important;
+  align-items: center !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  height: 30px !important;
+  min-height: 30px !important;
+  gap: 3px !important;
+  overflow: hidden !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+.voice-wave span,
+.voice-wave[data-voice-seek] span,
+.recording-wave span {
+  display: block !important;
+  flex: 0 0 4px !important;
+  width: 4px !important;
+  min-width: 4px !important;
+  height: var(--bar-h, 16px) !important;
+  min-height: 6px !important;
+  border-radius: 999px !important;
+  opacity: 0.92 !important;
+  visibility: visible !important;
+  background: rgba(247, 241, 232, 0.30) !important;
+}
+
+.voice-wave span.is-active,
+.voice-wave[data-voice-seek] span.is-active {
+  background: linear-gradient(180deg, #ffd166 0%, #ff7777 100%) !important;
+  opacity: 1 !important;
+}
+
+.voice-message.is-playing .voice-wave span.is-active {
+  transform: scaleY(1.08);
+}
+
+.submitted-draft-card.has-audio .voice-wave,
+.submitted-draft-card.has-audio .voice-wave[data-voice-seek] {
+  height: 20px !important;
+  min-height: 20px !important;
+  gap: 2px !important;
+}
+
+.submitted-draft-card.has-audio .voice-wave span,
+.submitted-draft-card.has-audio .voice-wave[data-voice-seek] span {
+  flex-basis: 3px !important;
+  width: 3px !important;
+  min-width: 3px !important;
+  height: max(5px, calc(var(--bar-h, 16px) * 0.68)) !important;
+}
+
+.personal-podium-grid {
+  justify-content: center;
+}
+
+.personal-podium-grid.podium-count-1 {
+  grid-template-columns: minmax(260px, 320px) !important;
+}
+
+.personal-podium-grid.podium-count-2 {
+  grid-template-columns: repeat(2, minmax(260px, 320px)) !important;
+}
+
+.personal-podium-grid.podium-count-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+}
+
+@media (max-width: 860px) {
+  .personal-podium-grid.podium-count-2,
+  .personal-podium-grid.podium-count-3 {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+
+@media (max-width: 720px) {
+  .input-stage-panel.no-shell-panel {
+    width: 100% !important;
+  }
+
+  .input-stage-panel.no-shell-panel > textarea,
+  .input-stage-panel.no-shell-panel > .submitted-draft-card,
+  .input-stage-panel.no-shell-panel > .audio-tools,
+  .input-stage-panel.no-shell-panel > .progress-card,
+  .input-stage-panel.no-shell-panel > .prompt-box,
+  .input-stage-panel.no-shell-panel > .timer {
+    width: 100% !important;
+  }
+
+  .voice-wave span:nth-child(n+28) {
+    display: none !important;
+  }
+}
+
+@media (max-width: 430px) {
+  .voice-wave span:nth-child(n+20) {
+    display: none !important;
+  }
+}
