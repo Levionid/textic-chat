@@ -80,7 +80,7 @@ const COPY = {
     vote: "Отдать голос",
     ownAnswer: "Это ваша концовка",
     copyJoke: "Утащить шутку",
-    copyBest: "Утащить топ",
+    copyBest: "Скопировать шутку",
     copy: "Скопировать",
     nextRound: "Еще раунд, и точно всё",
     final: "Показать финал",
@@ -98,10 +98,11 @@ const COPY = {
     answering: "Добей фразу, пока не передумал",
     revealing: "Готовые шутки",
     voting: "Голосование",
-    scoreboard: (round) => `После раунда ${round}: кто смешной`,
-    bestSingle: "Топовая шутка раунда",
-    bestMultiple: "Топовые шутки раунда",
-    finished: "Финал игры"
+    scoreboard: (round) => `Раунд ${round} · Итоги`,
+    bestSingle: "Лучшая шутка раунда",
+    bestMultiple: "Лучшие шутки раунда",
+    finished: "Финал игры",
+    starting: "Игра начинается"
   },
   placeholders: {
     name: "Например, Артур",
@@ -157,9 +158,10 @@ const COPY = {
     promptSubmitted: "Начало отправлено. Ждем остальных.",
     answerSubmitted: "Концовка отправлена. Ждем остальных.",
     voteSubmitted: "Голос принят. Ждем остальных.",
-    hostStartsVoting: "Ждем, пока хост запустит голосование.",
-    hostDecision: "Ждем решение хоста.",
+    hostStartsVoting: "Ждём, пока хост запустит голосование.",
+    hostDecision: "Хост выбирает следующий шаг.",
     hostCanRestart: "Хост может вернуть всех в лобби.",
+    gameStartingHint: "Приготовьтесь добивать фразы.",
     confirmLeave: "Вы уверены выйти?",
     confirmDelete: "Удалить лобби для всех игроков?",
     leftRoom: "Вы вышли из лобби.",
@@ -358,12 +360,20 @@ function getRemainingSeconds() {
 
 function startTimerView() {
   if (timerInterval) clearInterval(timerInterval);
-  timerInterval = setInterval(() => {
-    const node = document.getElementById("timerText");
-    if (node && currentRoom?.timerEndsAt) {
-      node.textContent = `Осталось: ${getRemainingSeconds()} сек.`;
-    }
-  }, 500);
+
+  const updateTimer = () => {
+    if (!currentRoom?.timerEndsAt) return;
+
+    const seconds = getRemainingSeconds();
+    const countdownNode = document.querySelector(".countdown-number");
+    const timerNode = document.getElementById("timerText");
+
+    if (countdownNode) countdownNode.textContent = seconds;
+    if (timerNode) timerNode.textContent = `Осталось: ${seconds} сек.`;
+  };
+
+  updateTimer();
+  timerInterval = setInterval(updateTimer, 500);
 }
 
 function copyText(text) {
@@ -861,6 +871,18 @@ function roomControlsHtml() {
   `;
 }
 
+function renderStarting() {
+  app.classList.add("plain-menu-card", "code-join-card", "game-stage-card");
+  app.innerHTML = `
+    <section class="countdown-screen">
+      <p class="eyebrow">раунд скоро начнётся</p>
+      <h2 class="panel-title centered-title">${COPY.screens.starting}</h2>
+      <div class="countdown-number">${getRemainingSeconds()}</div>
+      <p class="meta centered-meta">${COPY.messages.gameStartingHint}</p>
+    </section>
+  `;
+}
+
 function renderPrompting() {
   const submitted = hasSubmittedPrompt();
   app.innerHTML = `
@@ -903,23 +925,53 @@ function jokeText(answer, revealAuthor) {
   return `${prompt?.text || ""}\n${answer.text}${author}`;
 }
 
+function voteWord(count) {
+  const number = Math.abs(Number(count) || 0);
+  const lastTwo = number % 100;
+  const last = number % 10;
+
+  if (lastTwo >= 11 && lastTwo <= 14) return "голосов";
+  if (last === 1) return "голос";
+  if (last >= 2 && last <= 4) return "голоса";
+  return "голосов";
+}
+
+function jokeCardHtml({
+  meta,
+  start,
+  end,
+  actions = "",
+  winner = false,
+  extraClass = ""
+}) {
+  return `
+    <article class="joke joke-card ${winner ? "winner-joke" : ""} ${extraClass}">
+      <div class="meta joke-meta">${meta}</div>
+      <div class="joke-start">${start}</div>
+      <div class="joke-end">${end}</div>
+      ${actions ? `<div class="actions joke-actions">${actions}</div>` : ""}
+    </article>
+  `;
+}
+
 function jokesHtml({ voting = false, revealAuthor = false } = {}) {
   return `
-    <div class="jokes">
+    <div class="jokes joke-list">
       ${currentRoom.answers.map((answer, index) => {
         const prompt = getPrompt(answer.promptId);
         const own = answer.authorId === getMyId();
-        return `
-          <article class="joke">
-            <div class="meta">Шутка ${index + 1}${revealAuthor ? ` · автор: ${escapeHtml(getPlayerName(answer.authorId))}` : " · автор скрыт до итогов"}</div>
-            <div class="joke-start">${escapeHtml(prompt?.text || "")}</div>
-            <div class="joke-end">${escapeHtml(answer.text)}</div>
-            <div class="actions">
-              <button class="btn ghost" data-action="copy-joke" data-answer-id="${answer.id}" data-reveal-author="${revealAuthor ? "1" : "0"}">${COPY.buttons.copyJoke}</button>
-              ${voting ? `<button class="btn primary" data-action="vote" data-answer-id="${answer.id}" ${own || hasVoted() ? "disabled" : ""}>${own ? COPY.buttons.ownAnswer : COPY.buttons.vote}</button>` : ""}
-            </div>
-          </article>
+        const meta = `Шутка ${index + 1}${revealAuthor ? ` · автор: ${escapeHtml(getPlayerName(answer.authorId))}` : ""}`;
+        const actions = `
+          <button class="btn ghost" data-action="copy-joke" data-answer-id="${answer.id}" data-reveal-author="${revealAuthor ? "1" : "0"}">${COPY.buttons.copyJoke}</button>
+          ${voting ? `<button class="btn primary" data-action="vote" data-answer-id="${answer.id}" ${own || hasVoted() ? "disabled" : ""}>${own ? COPY.buttons.ownAnswer : COPY.buttons.vote}</button>` : ""}
         `;
+
+        return jokeCardHtml({
+          meta,
+          start: escapeHtml(prompt?.text || ""),
+          end: escapeHtml(answer.text),
+          actions
+        });
       }).join("")}
     </div>
   `;
@@ -927,51 +979,63 @@ function jokesHtml({ voting = false, revealAuthor = false } = {}) {
 
 function renderRevealing() {
   const revealAuthor = !currentRoom.settings.anonymousMode;
+  app.classList.add("game-stage-card");
   app.innerHTML = `
-    <h2 class="panel-title">${COPY.screens.revealing}</h2>
-    ${jokesHtml({ revealAuthor })}
-    <div class="actions">
-      ${isHost() ? `<button class="btn green" data-action="start-voting">${COPY.buttons.startVoting}</button>` : `<p class="meta">${COPY.messages.hostStartsVoting}</p>`}
+    <div class="game-stage game-stage-revealing">
+      <h2 class="game-stage-title">Раунд ${currentRoom.round} · Готовые шутки</h2>
+      <div class="game-stage-content">
+        ${jokesHtml({ revealAuthor })}
+      </div>
+      <div class="stage-actions">
+        ${isHost()
+          ? `<button class="btn primary" data-action="start-voting">${COPY.buttons.startVoting}</button>`
+          : `<p class="stage-hint">${COPY.messages.hostStartsVoting}</p>`}
+      </div>
     </div>
   `;
 }
 
 function renderVoting() {
   const revealAuthor = !currentRoom.settings.anonymousMode;
+  app.classList.add("game-stage-card");
   app.innerHTML = `
-    <h2 class="panel-title">${COPY.screens.voting}</h2>
-    ${timerHtml()}
-    ${hasVoted() ? `<p class="prompt-box">${COPY.messages.voteSubmitted}</p>` : ""}
-    ${jokesHtml({ voting: true, revealAuthor })}
+    <div class="game-stage">
+      <h2 class="game-stage-title">${COPY.screens.voting}</h2>
+      ${timerHtml()}
+      ${hasVoted() ? `<p class="prompt-box stage-message">${COPY.messages.voteSubmitted}</p>` : ""}
+      <div class="game-stage-content">
+        ${jokesHtml({ voting: true, revealAuthor })}
+      </div>
+    </div>
   `;
 }
 
 function historyHtml() {
   if (!currentRoom.bestJokesHistory.length) {
-    return `<p class="meta">${COPY.empty.history}</p>`;
+    return `<p class="meta empty-stage-text">${COPY.empty.history}</p>`;
   }
 
   return `
-    <div class="history">
-      ${currentRoom.bestJokesHistory.map((joke, index) => `
-        <article class="history-item">
-          <div class="meta">Раунд ${joke.round} · ${escapeHtml(joke.authorName)} · голосов: ${joke.votesCount}${joke.tied ? " · ничья в чате" : ""}</div>
-          <div class="joke-start">${escapeHtml(joke.promptText)}</div>
-          <div class="joke-end">${escapeHtml(joke.answerText)}</div>
-          <div class="actions">
-            <button class="btn ghost" data-action="copy-history" data-history-index="${index}">${COPY.buttons.copy}</button>
-          </div>
-        </article>
-      `).join("")}
+    <div class="history joke-list">
+      ${currentRoom.bestJokesHistory.map((joke, index) => jokeCardHtml({
+        meta: `Раунд ${joke.round} · ${escapeHtml(joke.authorName)} · ${joke.votesCount} ${voteWord(joke.votesCount)}${joke.tied ? " · ничья" : ""}`,
+        start: escapeHtml(joke.promptText),
+        end: escapeHtml(joke.answerText),
+        actions: `<button class="btn ghost" data-action="copy-history" data-history-index="${index}">${COPY.buttons.copy}</button>`,
+        extraClass: "history-item"
+      })).join("")}
     </div>
   `;
 }
 
 function scoresHtml() {
+  const sortedPlayers = [...currentRoom.players].sort((a, b) => b.score - a.score);
+  const topScore = sortedPlayers[0]?.score ?? 0;
+
   return `
-    <div class="scores">
-      ${[...currentRoom.players].sort((a, b) => b.score - a.score).map((player) => `
-        <div class="score-row">
+    <div class="scores score-list">
+      ${sortedPlayers.map((player) => `
+        <div class="score-row ${player.score === topScore ? "score-leader" : ""}">
           <span>${escapeHtml(player.name)}</span>
           <span>${player.score} очк.</span>
         </div>
@@ -986,40 +1050,56 @@ function renderScoreboard() {
     ? currentRoom.lastBestJokes
     : (currentRoom.lastBestJoke ? [currentRoom.lastBestJoke] : []);
   const tieText = currentRoom.lastRoundTie
-    ? `<div class="tie-banner">Ничья: ${currentRoom.lastRoundTie.winnersCount} шутки набрали по ${currentRoom.lastRoundTie.votesCount} голос.</div>`
+    ? `<div class="tie-banner">Ничья: ${currentRoom.lastRoundTie.winnersCount} шутки набрали по ${currentRoom.lastRoundTie.votesCount} ${voteWord(currentRoom.lastRoundTie.votesCount)}.</div>`
     : "";
 
+  app.classList.add("game-stage-card");
   app.innerHTML = `
-    <h2 class="panel-title">${COPY.screens.scoreboard(currentRoom.round)}</h2>
-    ${scoresHtml()}
-    <h3 class="section-title">${COPY.labels.roundVotes}</h3>
-    ${tieText}
-    <div class="jokes">
-      ${currentRoom.lastRoundResults.map((result) => `
-        <article class="joke ${result.isRoundWinner ? "winner-joke" : ""}">
-          <div class="meta">Автор: ${escapeHtml(result.authorName)} · голосов: ${result.votesCount}${result.isRoundWinner ? " · лучшая шутка раунда" : ""}</div>
-          <div class="joke-start">${escapeHtml(result.promptText)}</div>
-          <div class="joke-end">${escapeHtml(result.answerText)}</div>
-        </article>
-      `).join("")}
-    </div>
-    <h3 class="section-title">${bestJokes.length > 1 ? COPY.screens.bestMultiple : COPY.screens.bestSingle}</h3>
-    ${bestJokes.length ? `
-      <div class="jokes">
-        ${bestJokes.map((joke, index) => `
-          <article class="joke winner-joke">
-            <div class="meta">${escapeHtml(joke.authorName)} · голосов: ${joke.votesCount}${bestJokes.length > 1 ? " · ничья в чате" : ""}</div>
-            <div class="joke-start">${escapeHtml(joke.promptText)}</div>
-            <div class="joke-end">${escapeHtml(joke.answerText)}</div>
-            <div class="actions"><button class="btn yellow" data-action="copy-best" data-best-index="${index}">${COPY.buttons.copyBest}</button></div>
-          </article>
-        `).join("")}
+    <div class="game-stage scoreboard-stage">
+      <h2 class="game-stage-title">${COPY.screens.scoreboard(currentRoom.round)}</h2>
+
+      <section class="stage-section">
+        ${scoresHtml()}
+      </section>
+
+      <section class="stage-section">
+        <h3 class="section-title stage-section-title">${COPY.labels.roundVotes}</h3>
+        ${tieText}
+        <div class="jokes joke-list">
+          ${currentRoom.lastRoundResults.map((result) => jokeCardHtml({
+            meta: `Автор: ${escapeHtml(result.authorName)} · ${result.votesCount} ${voteWord(result.votesCount)}${result.isRoundWinner ? " · лучшая шутка раунда" : ""}`,
+            start: escapeHtml(result.promptText),
+            end: escapeHtml(result.answerText),
+            winner: result.isRoundWinner
+          })).join("")}
+        </div>
+      </section>
+
+      <section class="stage-section">
+        <h3 class="section-title stage-section-title">${bestJokes.length > 1 ? COPY.screens.bestMultiple : COPY.screens.bestSingle}</h3>
+        ${bestJokes.length ? `
+          <div class="jokes joke-list">
+            ${bestJokes.map((joke, index) => jokeCardHtml({
+              meta: `${escapeHtml(joke.authorName)} · ${joke.votesCount} ${voteWord(joke.votesCount)}${bestJokes.length > 1 ? " · ничья" : ""}`,
+              start: escapeHtml(joke.promptText),
+              end: escapeHtml(joke.answerText),
+              winner: true,
+              actions: `<button class="btn yellow" data-action="copy-best" data-best-index="${index}">${COPY.buttons.copyBest}</button>`
+            })).join("")}
+          </div>
+        ` : `<p class="meta empty-stage-text">${COPY.empty.best}</p>`}
+      </section>
+
+      <section class="stage-section">
+        <h3 class="section-title stage-section-title">${COPY.labels.history}</h3>
+        ${historyHtml()}
+      </section>
+
+      <div class="stage-actions">
+        ${isHost()
+          ? `<button class="btn primary" data-action="next-round">${isFinalNext ? COPY.buttons.final : COPY.buttons.nextRound}</button>`
+          : `<p class="stage-hint">${COPY.messages.hostDecision}</p>`}
       </div>
-    ` : `<p class="meta">${COPY.empty.best}</p>`}
-    <h3 class="section-title">${COPY.labels.history}</h3>
-    ${historyHtml()}
-    <div class="actions">
-      ${isHost() ? `<button class="btn green" data-action="next-round">${isFinalNext ? COPY.buttons.final : COPY.buttons.nextRound}</button>` : `<p class="meta">${COPY.messages.hostDecision}</p>`}
     </div>
   `;
 }
@@ -1051,13 +1131,20 @@ function render() {
   if (!currentRoom || currentRoom.state !== "waiting" || !lobbySettingsOpen) {
     closeSettingsModal();
   }
-  app.classList.remove("plain-menu-card", "code-join-card", "server-list-card", "create-game-card", "waiting-room-card");
+
+  const stageStates = ["starting", "revealing", "voting", "scoreboard", "finished"];
+  const isStageScreen = Boolean(currentRoom && stageStates.includes(currentRoom.state));
+
+  app.classList.remove("plain-menu-card", "code-join-card", "server-list-card", "create-game-card", "waiting-room-card", "game-stage-card");
   document.body.classList.toggle("home-screen", !currentRoom && currentScreen === "home");
   document.body.classList.toggle(
     "simple-screen",
     !currentRoom && ["home", "join", "code", "create", "lobbies", "invite", "inviteBlocked", "lobbyMissing", "notFound"].includes(currentScreen)
   );
   document.body.classList.toggle("waiting-screen", Boolean(currentRoom && currentRoom.state === "waiting"));
+  document.body.classList.toggle("stage-screen", isStageScreen);
+  document.body.classList.toggle("scoreboard-screen", Boolean(currentRoom && currentRoom.state === "scoreboard"));
+
   if (!currentRoom) {
     if (currentScreen === "create") renderCreateRoom();
     else if (currentScreen === "join") renderJoinMenu();
@@ -1077,12 +1164,14 @@ function render() {
 
   const state = currentRoom.state;
   if (state === "waiting") renderWaiting();
+  if (state === "starting") renderStarting();
   if (state === "prompting") renderPrompting();
   if (state === "answering") renderAnswering();
   if (state === "revealing") renderRevealing();
   if (state === "voting") renderVoting();
   if (state === "scoreboard") renderScoreboard();
   if (state === "finished") renderFinished();
+
   app.insertAdjacentHTML("beforeend", roomControlsHtml());
   startTimerView();
   restartScreenAnimation();
@@ -1345,10 +1434,18 @@ socket.on("sessionExpired", () => {
 });
 
 socket.on("roomUpdate", (room) => {
+  const oldState = previousState;
   currentRoom = room;
   setRoute(pathForRoom(room), { replace: true });
 
-  if (previousState !== room.state) {
+  if (oldState && oldState !== room.state) {
+    closeNameModal();
+    closeSettingsModal();
+    pendingNameAction = null;
+  }
+
+  if (oldState !== room.state) {
+    if (room.state === "starting") playSound("reveal", { respectRoomSetting: true });
     if (room.state === "revealing") playRevealSound();
     if (room.state === "finished") playWinSound();
   }

@@ -417,6 +417,28 @@ function startRound(room) {
   emitRoom(room);
 }
 
+function startGameCountdown(room) {
+  clearRoomTimer(room);
+  room.state = "starting";
+  room.timerEndsAt = Date.now() + 5000;
+  room.timerHandle = setTimeout(() => {
+    const latest = rooms[room.code];
+    if (!latest || latest.state !== "starting") return;
+
+    if (getConnectedPlayers(latest).length < 2) {
+      latest.state = "waiting";
+      latest.timerEndsAt = null;
+      clearRoomTimer(latest);
+      emitRoom(latest);
+      emitOpenRooms();
+      return;
+    }
+
+    startRound(latest);
+  }, 5150);
+  emitRoom(room);
+}
+
 function buildAssignments(room) {
   const players = getConnectedPlayers(room);
   room.assignments = {};
@@ -792,6 +814,7 @@ io.on("connection", (socket) => {
   socket.on("startGame", () => {
     const room = rooms[socket.data.roomCode];
     if (!ensureHost(socket, room)) return;
+    if (room.state !== "waiting") return;
     if (getConnectedPlayers(room).length < 2) {
       return emitError(socket, COPY.errors.minPlayers);
     }
@@ -803,7 +826,7 @@ io.on("connection", (socket) => {
       player.bestSingleRoundVotes = 0;
     });
     room.bestJokesHistory = [];
-    startRound(room);
+    startGameCountdown(room);
     emitOpenRooms();
   });
 
