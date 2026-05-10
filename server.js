@@ -220,6 +220,7 @@ function publicRoom(room) {
   const { timerHandle, emptyDeleteTimer, ...safeRoom } = room;
   return {
     ...safeRoom,
+    serverNow: Date.now(),
     players: room.players.map(({ socketId, disconnectTimer, ...player }) => player)
   };
 }
@@ -420,13 +421,12 @@ function startRound(room) {
 function startGameCountdown(room) {
   clearRoomTimer(room);
   room.state = "starting";
-  // Даём клиенту небольшой запас, чтобы у всех игроков экран успел показать "5".
-  room.timerEndsAt = Date.now() + 5500;
+  room.timerEndsAt = Date.now() + 5000;
   room.timerHandle = setTimeout(() => {
     const latest = rooms[room.code];
     if (!latest || latest.state !== "starting") return;
     startRound(latest);
-  }, 5150);
+  }, 5000);
   emitRoom(room);
 }
 

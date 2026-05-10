@@ -196,6 +196,7 @@ const inputDrafts = {
   answers: {}
 };
 let historyOpen = false;
+let serverTimeOffset = 0;
 
 function screenFromPath(pathname) {
   if (pathname === ROUTES.home) return "home";
@@ -357,14 +358,19 @@ function timerHtml() {
   return `<div class="timer" id="timerText">Осталось: ${getRemainingSeconds()} сек.</div>`;
 }
 
+function syncedNow() {
+  return Date.now() + serverTimeOffset;
+}
+
 function getRemainingSeconds() {
   if (!currentRoom?.timerEndsAt) return 0;
-  return Math.max(0, Math.ceil((currentRoom.timerEndsAt - Date.now()) / 1000));
+  return Math.max(0, Math.ceil((currentRoom.timerEndsAt - syncedNow()) / 1000));
 }
 
 function getStartingCountdownSeconds() {
   if (!currentRoom?.timerEndsAt) return 5;
-  return Math.max(0, Math.min(5, Math.ceil((currentRoom.timerEndsAt - Date.now()) / 1000)));
+  const seconds = Math.ceil((currentRoom.timerEndsAt - syncedNow()) / 1000);
+  return Math.max(1, Math.min(5, seconds));
 }
 
 function captureTypingFocus() {
@@ -372,20 +378,28 @@ function captureTypingFocus() {
   if (!active || !["promptInput", "answerInput"].includes(active.id)) return null;
   return {
     id: active.id,
+    value: active.value,
     selectionStart: active.selectionStart,
-    selectionEnd: active.selectionEnd
+    selectionEnd: active.selectionEnd,
+    scrollTop: active.scrollTop
   };
 }
 
 function restoreTypingFocus(focusState) {
   if (!focusState) return;
-  requestAnimationFrame(() => {
+  const restore = () => {
     const input = document.getElementById(focusState.id);
     if (!input) return;
     input.focus({ preventScroll: true });
     if (typeof focusState.selectionStart === "number" && typeof focusState.selectionEnd === "number") {
-      input.setSelectionRange(focusState.selectionStart, focusState.selectionEnd);
+      const max = input.value.length;
+      input.setSelectionRange(Math.min(focusState.selectionStart, max), Math.min(focusState.selectionEnd, max));
     }
+    if (typeof focusState.scrollTop === "number") input.scrollTop = focusState.scrollTop;
+  };
+  requestAnimationFrame(() => {
+    restore();
+    setTimeout(restore, 30);
   });
 }
 
@@ -1242,6 +1256,7 @@ function render() {
   document.body.classList.toggle("waiting-screen", Boolean(currentRoom && currentRoom.state === "waiting"));
   document.body.classList.toggle("stage-screen", Boolean(currentRoom && ["starting", "prompting", "answering", "revealing", "voting"].includes(currentRoom.state)));
   document.body.classList.toggle("scoreboard-screen", Boolean(currentRoom && ["scoreboard", "finished"].includes(currentRoom.state)));
+  document.body.classList.toggle("has-room-controls", Boolean(currentRoom));
   if (!currentRoom) {
     if (currentScreen === "create") renderCreateRoom();
     else if (currentScreen === "join") renderJoinMenu();
@@ -1553,6 +1568,9 @@ socket.on("sessionExpired", () => {
 
 socket.on("roomUpdate", (room) => {
   const oldState = previousState;
+  if (typeof room.serverNow === "number") {
+    serverTimeOffset = room.serverNow - Date.now();
+  }
   currentRoom = room;
   clearSubmittedDrafts();
   setRoute(pathForRoom(room), { replace: true });

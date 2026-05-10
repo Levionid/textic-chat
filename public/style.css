@@ -2779,3 +2779,212 @@ button,
     right: 6px;
   }
 }
+
+/* === Patch 5: desktop control bar, synced stable background, no home scrollbar === */
+body {
+  padding-bottom: 0 !important;
+  background:
+    radial-gradient(circle at 12vw 8vh, rgba(255, 107, 107, 0.12), transparent 30vw),
+    radial-gradient(circle at 88vw 10vh, rgba(78, 205, 196, 0.12), transparent 28vw),
+    radial-gradient(circle at 50vw 92vh, rgba(255, 209, 102, 0.08), transparent 36vw),
+    linear-gradient(180deg, #171722 0%, var(--bg) 58%, #0c0c11 100%) !important;
+  background-attachment: fixed, fixed, fixed, fixed !important;
+  background-repeat: no-repeat !important;
+}
+
+body::after {
+  display: none !important;
+}
+
+body.home-screen,
+body.simple-screen:not(.has-room-controls) {
+  overflow-y: hidden;
+}
+
+body.has-room-controls {
+  padding-bottom: calc(112px + var(--safe-bottom)) !important;
+}
+
+body.has-room-controls .app {
+  padding-bottom: calc(112px + var(--safe-bottom)) !important;
+}
+
+body.home-screen:not(.has-room-controls) .app,
+body.simple-screen:not(.has-room-controls) .app {
+  padding-bottom: 0 !important;
+}
+
+.game-card.compact-game-stage-card .input-stage-panel,
+.game-card.game-stage-card .input-stage-panel,
+.input-stage-panel.stage-panel {
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.input-stage-panel textarea,
+.input-stage-panel .prompt-box,
+.input-stage-panel .progress-card,
+.stage-timer-row .timer,
+.input-stage-panel .timer {
+  width: min(760px, 100%) !important;
+  margin-inline: auto !important;
+}
+
+.input-stage-panel .progress-card {
+  margin-top: 4px !important;
+}
+
+.room-controls {
+  position: fixed !important;
+  left: 50% !important;
+  right: auto !important;
+  bottom: calc(18px + var(--safe-bottom)) !important;
+  z-index: 80 !important;
+  width: min(840px, calc(100% - 32px)) !important;
+  max-width: min(840px, calc(100% - 32px)) !important;
+  min-height: 56px !important;
+  margin: 0 !important;
+  padding: 10px 12px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+  border-radius: 999px !important;
+  transform: translateX(-50%) !important;
+  pointer-events: auto !important;
+}
+
+body.waiting-screen .room-controls {
+  width: min(1040px, calc(100% - 32px)) !important;
+  max-width: min(1040px, calc(100% - 32px)) !important;
+}
+
+body.stage-screen .room-controls,
+body.scoreboard-screen .room-controls {
+  width: min(840px, calc(100% - 32px)) !important;
+  max-width: min(840px, calc(100% - 32px)) !important;
+}
+
+.room-controls-left,
+.room-controls-right {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  min-width: 0 !important;
+  width: auto !important;
+}
+
+.room-controls-left {
+  flex: 1 1 auto !important;
+  justify-content: flex-start !important;
+}
+
+.room-controls-right {
+  flex: 0 0 auto !important;
+  justify-content: flex-end !important;
+}
+
+.room-controls .btn {
+  width: auto !important;
+  min-width: 0 !important;
+  min-height: 38px !important;
+  white-space: nowrap !important;
+}
+
+.room-controls-left .btn.primary {
+  min-width: 190px !important;
+}
+
+.scoreboard-stage,
+.reveal-stage,
+.input-stage,
+.countdown-stage {
+  padding-bottom: 16px !important;
+}
+
+.countdown-number {
+  font-variant-numeric: tabular-nums;
+}
+
+.history-disclosure {
+  max-width: 840px !important;
+}
+
+.compact-history {
+  overscroll-behavior: contain;
+}
+
+@media (max-width: 1024px) {
+  body.has-room-controls {
+    padding-bottom: calc(122px + var(--safe-bottom)) !important;
+  }
+
+  body.has-room-controls .app {
+    padding-bottom: calc(122px + var(--safe-bottom)) !important;
+  }
+
+  .room-controls,
+  body.waiting-screen .room-controls,
+  body.stage-screen .room-controls,
+  body.scoreboard-screen .room-controls {
+    width: min(900px, calc(100% - 28px)) !important;
+    max-width: min(900px, calc(100% - 28px)) !important;
+  }
+}
+
+@media (max-width: 720px) {
+  body.home-screen,
+  body.simple-screen:not(.has-room-controls) {
+    overflow-y: auto;
+  }
+
+  body.has-room-controls {
+    padding-bottom: calc(178px + var(--safe-bottom)) !important;
+  }
+
+  body.has-room-controls .app {
+    padding-bottom: calc(178px + var(--safe-bottom)) !important;
+  }
+
+  .room-controls,
+  body.waiting-screen .room-controls,
+  body.stage-screen .room-controls,
+  body.scoreboard-screen .room-controls {
+    left: 10px !important;
+    right: 10px !important;
+    bottom: calc(10px + var(--safe-bottom)) !important;
+    width: auto !important;
+    max-width: none !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+    border-radius: 24px !important;
+    transform: none !important;
+  }
+
+  .room-controls-left,
+  .room-controls-right {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+
+  .room-controls .btn,
+  .room-controls-left .btn.primary {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+}
+
+@media (max-width: 480px) {
+  body.has-room-controls {
+    padding-bottom: calc(188px + var(--safe-bottom)) !important;
+  }
+
+  body.has-room-controls .app {
+    padding-bottom: calc(188px + var(--safe-bottom)) !important;
+  }
+}
