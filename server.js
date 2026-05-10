@@ -827,7 +827,13 @@ io.on("connection", (socket) => {
 
     const promptText = cleanText(text, PROMPT_MAX_LENGTH);
     if (!promptText) return emitError(socket, COPY.errors.emptyPrompt);
-    if (room.prompts.some((prompt) => prompt.authorId === playerId)) return;
+
+    const existingPrompt = room.prompts.find((prompt) => prompt.authorId === playerId);
+    if (existingPrompt) {
+      existingPrompt.text = promptText;
+      emitRoom(room);
+      return;
+    }
 
     room.prompts.push({
       id: makeId("prompt"),
@@ -850,7 +856,13 @@ io.on("connection", (socket) => {
     const answerText = cleanText(text, ANSWER_MAX_LENGTH);
     if (!answerText) return emitError(socket, COPY.errors.emptyAnswer);
     if (!room.assignments[playerId]) return emitError(socket, COPY.errors.noAssignment);
-    if (room.answers.some((answer) => answer.authorId === playerId)) return;
+
+    const existingAnswer = room.answers.find((answer) => answer.authorId === playerId);
+    if (existingAnswer) {
+      existingAnswer.text = answerText;
+      emitRoom(room);
+      return;
+    }
 
     room.answers.push({
       id: makeId("answer"),

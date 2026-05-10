@@ -81,7 +81,9 @@ const COPY = {
     cancelSettings: "Отмена",
     startGame: "Начать игру",
     submitPrompt: "Зафиксить начало",
+    updatePrompt: "Обновить начало",
     submitAnswer: "Отправить концовку",
+    updateAnswer: "Обновить концовку",
     startVoting: "Перейти к голосованию",
     vote: "Отдать голос",
     ownAnswer: "Это ваша концовка",
@@ -347,6 +349,14 @@ function getPrompt(promptId) {
   return currentRoom?.prompts.find((prompt) => prompt.id === promptId);
 }
 
+function getMyPrompt() {
+  return currentRoom?.prompts.find((prompt) => prompt.authorId === getMyId());
+}
+
+function getMyAnswer() {
+  return currentRoom?.answers.find((answer) => answer.authorId === getMyId());
+}
+
 function hasSubmittedPrompt() {
   return currentRoom?.prompts.some((prompt) => prompt.authorId === getMyId());
 }
@@ -418,17 +428,23 @@ function answerDraftKey(room = currentRoom) {
 }
 
 function getPromptDraft() {
-  return inputDrafts.prompts[promptDraftKey()] || "";
+  const key = promptDraftKey();
+  if (Object.prototype.hasOwnProperty.call(inputDrafts.prompts, key)) return inputDrafts.prompts[key];
+  return getMyPrompt()?.text || "";
 }
 
 function getAnswerDraft() {
-  return inputDrafts.answers[answerDraftKey()] || "";
+  const key = answerDraftKey();
+  if (Object.prototype.hasOwnProperty.call(inputDrafts.answers, key)) return inputDrafts.answers[key];
+  return getMyAnswer()?.text || "";
 }
 
-function clearSubmittedDrafts() {
-  if (!currentRoom) return;
-  if (hasSubmittedPrompt()) delete inputDrafts.prompts[promptDraftKey()];
-  if (hasSubmittedAnswer()) delete inputDrafts.answers[answerDraftKey()];
+function clearDraftForState(state, room = currentRoom) {
+  if (!room) return;
+  const promptKey = `${room.code}:${room.round}:${getMyId()}`;
+  const answerKey = `${room.code}:${room.round}:${getMyId()}`;
+  if (state !== "prompting") delete inputDrafts.prompts[promptKey];
+  if (state !== "answering") delete inputDrafts.answers[answerKey];
 }
 
 function startTimerView() {
@@ -933,12 +949,12 @@ function roomControlsHtml() {
     statusNote = `<span class="meta room-controls-note">${COPY.messages.hostDecision}</span>`;
   }
 
-  if (currentRoom.state === "prompting" && !hasSubmittedPrompt()) {
-    primaryAction = `<button class="btn primary" data-action="submit-prompt">${COPY.buttons.submitPrompt}</button>`;
+  if (currentRoom.state === "prompting") {
+    primaryAction = `<button class="btn primary" data-action="submit-prompt">${hasSubmittedPrompt() ? COPY.buttons.updatePrompt : COPY.buttons.submitPrompt}</button>`;
   }
 
-  if (currentRoom.state === "answering" && !hasSubmittedAnswer()) {
-    primaryAction = `<button class="btn primary" data-action="submit-answer">${COPY.buttons.submitAnswer}</button>`;
+  if (currentRoom.state === "answering") {
+    primaryAction = `<button class="btn primary" data-action="submit-answer">${hasSubmittedAnswer() ? COPY.buttons.updateAnswer : COPY.buttons.submitAnswer}</button>`;
   }
 
   if (currentRoom.state === "revealing") {
@@ -1015,11 +1031,8 @@ function renderPrompting() {
       ${stageTitle(`Раунд ${currentRoom.round} · Кинь начало`)}
       <section class="stage-panel input-stage-panel">
         ${timerHtml()}
-        ${submitted ? `
-          <p class="prompt-box stage-message">${COPY.messages.promptSubmitted}</p>
-        ` : `
-          <textarea id="promptInput" maxlength="160" placeholder="${COPY.placeholders.prompt}">${escapeHtml(draft)}</textarea>
-        `}
+        <textarea id="promptInput" maxlength="160" placeholder="${COPY.placeholders.prompt}">${escapeHtml(draft)}</textarea>
+        ${submitted ? `<p class="meta edit-draft-note">Начало уже отправлено. Можно изменить текст и нажать «${COPY.buttons.updatePrompt}», пока идёт таймер.</p>` : ""}
         <div class="progress-card">
           <h3 class="section-title">${COPY.labels.progress}</h3>
           <p class="meta">${currentRoom.prompts.length} из ${connectedCount} кинули начало. ${randomWaitingMessage(currentRoom.prompts.length)}</p>
@@ -1043,11 +1056,8 @@ function renderAnswering() {
       <section class="stage-panel input-stage-panel">
         ${timerHtml()}
         <div class="prompt-box stage-prompt">${escapeHtml(prompt?.text || COPY.empty.promptMissing)}</div>
-        ${submitted ? `
-          <p class="prompt-box stage-message">${COPY.messages.answerSubmitted}</p>
-        ` : `
-          <textarea id="answerInput" maxlength="180" placeholder="${COPY.placeholders.answer}">${escapeHtml(draft)}</textarea>
-        `}
+        <textarea id="answerInput" maxlength="180" placeholder="${COPY.placeholders.answer}">${escapeHtml(draft)}</textarea>
+        ${submitted ? `<p class="meta edit-draft-note">Концовка уже отправлена. Можно изменить текст и нажать «${COPY.buttons.updateAnswer}», пока идёт таймер.</p>` : ""}
         <div class="progress-card">
           <h3 class="section-title">${COPY.labels.progress}</h3>
           <p class="meta">${currentRoom.answers.length} из ${connectedCount} отправили концовку. ${randomWaitingMessage(currentRoom.answers.length + 2)}</p>
@@ -1588,10 +1598,10 @@ socket.on("roomUpdate", (room) => {
     serverTimeOffset = room.serverNow - Date.now();
   }
   currentRoom = room;
-  clearSubmittedDrafts();
   setRoute(pathForRoom(room), { replace: true });
 
   if (oldState && oldState !== room.state) {
+    clearDraftForState(room.state, room);
     pendingNameAction = null;
     closeNameModal();
     closeSettingsModal();
