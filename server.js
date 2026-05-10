@@ -420,7 +420,8 @@ function startRound(room) {
 function startGameCountdown(room) {
   clearRoomTimer(room);
   room.state = "starting";
-  room.timerEndsAt = Date.now() + 5000;
+  // Даём клиенту небольшой запас, чтобы у всех игроков экран успел показать "5".
+  room.timerEndsAt = Date.now() + 5500;
   room.timerHandle = setTimeout(() => {
     const latest = rooms[room.code];
     if (!latest || latest.state !== "starting") return;

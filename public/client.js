@@ -195,6 +195,7 @@ const inputDrafts = {
   prompts: {},
   answers: {}
 };
+let historyOpen = false;
 
 function screenFromPath(pathname) {
   if (pathname === ROUTES.home) return "home";
@@ -361,6 +362,33 @@ function getRemainingSeconds() {
   return Math.max(0, Math.ceil((currentRoom.timerEndsAt - Date.now()) / 1000));
 }
 
+function getStartingCountdownSeconds() {
+  if (!currentRoom?.timerEndsAt) return 5;
+  return Math.max(0, Math.min(5, Math.ceil((currentRoom.timerEndsAt - Date.now()) / 1000)));
+}
+
+function captureTypingFocus() {
+  const active = document.activeElement;
+  if (!active || !["promptInput", "answerInput"].includes(active.id)) return null;
+  return {
+    id: active.id,
+    selectionStart: active.selectionStart,
+    selectionEnd: active.selectionEnd
+  };
+}
+
+function restoreTypingFocus(focusState) {
+  if (!focusState) return;
+  requestAnimationFrame(() => {
+    const input = document.getElementById(focusState.id);
+    if (!input) return;
+    input.focus({ preventScroll: true });
+    if (typeof focusState.selectionStart === "number" && typeof focusState.selectionEnd === "number") {
+      input.setSelectionRange(focusState.selectionStart, focusState.selectionEnd);
+    }
+  });
+}
+
 function promptDraftKey(room = currentRoom) {
   return room ? `${room.code}:${room.round}:${getMyId()}` : "";
 }
@@ -394,7 +422,7 @@ function startTimerView() {
 
     const countdownNode = document.querySelector(".countdown-number");
     if (countdownNode && currentRoom?.timerEndsAt) {
-      countdownNode.textContent = remaining;
+      countdownNode.textContent = getStartingCountdownSeconds();
     }
   }, 500);
 }
@@ -873,18 +901,50 @@ function roomControlsHtml() {
   if (!currentRoom) return "";
   const onlineCount = currentRoom.players.filter((player) => player.connected).length;
   const showLeaveButton = !(currentRoom.state === "waiting" && onlineCount <= 1);
-  const waitingHostControls = currentRoom.state === "waiting" && isHost()
-    ? `<button class="btn primary" data-action="start-game">${COPY.buttons.startGame}</button>`
-    : "";
-  const waitingGuestNote = currentRoom.state === "waiting" && !isHost()
-    ? `<span class="meta room-controls-note">${COPY.messages.hostDecision}</span>`
-    : "";
+
+  let primaryAction = "";
+  let statusNote = "";
+
+  if (currentRoom.state === "waiting" && isHost()) {
+    primaryAction = `<button class="btn primary" data-action="start-game">${COPY.buttons.startGame}</button>`;
+  }
+
+  if (currentRoom.state === "waiting" && !isHost()) {
+    statusNote = `<span class="meta room-controls-note">${COPY.messages.hostDecision}</span>`;
+  }
+
+  if (currentRoom.state === "prompting" && !hasSubmittedPrompt()) {
+    primaryAction = `<button class="btn primary" data-action="submit-prompt">${COPY.buttons.submitPrompt}</button>`;
+  }
+
+  if (currentRoom.state === "answering" && !hasSubmittedAnswer()) {
+    primaryAction = `<button class="btn primary" data-action="submit-answer">${COPY.buttons.submitAnswer}</button>`;
+  }
+
+  if (currentRoom.state === "revealing") {
+    primaryAction = isHost()
+      ? `<button class="btn primary" data-action="start-voting">${COPY.buttons.startVoting}</button>`
+      : `<span class="meta room-controls-note">${COPY.messages.hostStartsVoting}</span>`;
+  }
+
+  if (currentRoom.state === "scoreboard") {
+    const isFinalNext = currentRoom.round >= currentRoom.maxRounds;
+    primaryAction = isHost()
+      ? `<button class="btn primary" data-action="next-round">${isFinalNext ? COPY.buttons.final : COPY.buttons.nextRound}</button>`
+      : `<span class="meta room-controls-note">${COPY.messages.hostDecision}</span>`;
+  }
+
+  if (currentRoom.state === "finished") {
+    primaryAction = isHost()
+      ? `<button class="btn primary" data-action="restart-game">${COPY.buttons.restart}</button>`
+      : `<span class="meta room-controls-note">${COPY.messages.hostCanRestart}</span>`;
+  }
 
   return `
     <div class="room-controls">
       <div class="room-controls-left">
-        ${waitingHostControls}
-        ${waitingGuestNote}
+        ${primaryAction}
+        ${statusNote}
       </div>
       <div class="room-controls-right">
         ${showLeaveButton ? `<button class="btn ghost danger-lite" data-action="leave-room">${COPY.buttons.leaveRoom}</button>` : ""}
@@ -909,7 +969,7 @@ function renderStarting() {
     <div class="game-stage countdown-stage">
       ${stageTitle(COPY.screens.starting, "раунд скоро начнётся")}
       <section class="stage-panel countdown-panel">
-        <div class="countdown-number">${getRemainingSeconds()}</div>
+        <div class="countdown-number">${getStartingCountdownSeconds()}</div>
         <p class="meta centered-meta">Приготовьтесь добивать фразы</p>
       </section>
     </div>
@@ -930,7 +990,6 @@ function renderPrompting() {
           <p class="prompt-box stage-message">${COPY.messages.promptSubmitted}</p>
         ` : `
           <textarea id="promptInput" maxlength="160" placeholder="${COPY.placeholders.prompt}">${escapeHtml(draft)}</textarea>
-          <div class="actions stage-actions"><button class="btn primary" data-action="submit-prompt">${COPY.buttons.submitPrompt}</button></div>
         `}
         <div class="progress-card">
           <h3 class="section-title">${COPY.labels.progress}</h3>
@@ -959,7 +1018,6 @@ function renderAnswering() {
           <p class="prompt-box stage-message">${COPY.messages.answerSubmitted}</p>
         ` : `
           <textarea id="answerInput" maxlength="180" placeholder="${COPY.placeholders.answer}">${escapeHtml(draft)}</textarea>
-          <div class="actions stage-actions"><button class="btn primary" data-action="submit-answer">${COPY.buttons.submitAnswer}</button></div>
         `}
         <div class="progress-card">
           <h3 class="section-title">${COPY.labels.progress}</h3>
@@ -1016,9 +1074,6 @@ function renderRevealing() {
     <div class="game-stage reveal-stage">
       ${stageTitle(`Раунд ${currentRoom.round} · Готовые шутки`)}
       ${jokesHtml({ revealAuthor })}
-      <div class="stage-footer-actions">
-        ${isHost() ? `<button class="btn primary" data-action="start-voting">${COPY.buttons.startVoting}</button>` : `<p class="meta centered-meta">${COPY.messages.hostStartsVoting}</p>`}
-      </div>
     </div>
   `;
 }
@@ -1040,26 +1095,51 @@ function historyHtml() {
   const count = currentRoom.bestJokesHistory.length;
   if (!count) {
     return `
-      <details class="history-disclosure">
-        <summary>${COPY.labels.history}<span>0</span></summary>
+      <section class="history-disclosure">
+        <button class="history-summary" type="button" disabled>
+          <span>${COPY.labels.history}</span>
+          <span class="history-count">0</span>
+        </button>
         <p class="meta history-empty">${COPY.empty.history}</p>
-      </details>
+      </section>
     `;
   }
 
+  const latestIndex = count - 1;
+  const latest = currentRoom.bestJokesHistory[latestIndex];
+  const rest = currentRoom.bestJokesHistory
+    .map((joke, index) => ({ joke, index }))
+    .filter((item) => item.index !== latestIndex);
+
   return `
-    <details class="history-disclosure">
-      <summary>${COPY.labels.history}<span>${count}</span></summary>
-      <div class="history compact-history">
-        ${currentRoom.bestJokesHistory.map((joke, index) => jokeCardHtml({
-          meta: `Раунд ${joke.round} · ${joke.authorName} · голосов: ${joke.votesCount}${joke.tied ? " · ничья" : ""}`,
-          promptText: joke.promptText,
-          answerText: joke.answerText,
+    <section class="history-disclosure ${historyOpen ? "is-open" : ""}">
+      <button class="history-summary" type="button" data-action="toggle-history" aria-expanded="${historyOpen ? "true" : "false"}">
+        <span>${COPY.labels.history}</span>
+        <span class="history-count">${count}</span>
+      </button>
+
+      <div class="history-preview">
+        ${jokeCardHtml({
+          meta: `Раунд ${latest.round} · ${latest.authorName} · голосов: ${latest.votesCount}${latest.tied ? " · ничья" : ""}`,
+          promptText: latest.promptText,
+          answerText: latest.answerText,
           compact: true,
-          actions: `<button class="btn ghost compact-btn" data-action="copy-history" data-history-index="${index}">${COPY.buttons.copy}</button>`
-        })).join("")}
+          actions: `<button class="btn ghost compact-btn" data-action="copy-history" data-history-index="${latestIndex}">${COPY.buttons.copy}</button>`
+        })}
       </div>
-    </details>
+
+      ${historyOpen && rest.length ? `
+        <div class="history compact-history">
+          ${rest.reverse().map(({ joke, index }) => jokeCardHtml({
+            meta: `Раунд ${joke.round} · ${joke.authorName} · голосов: ${joke.votesCount}${joke.tied ? " · ничья" : ""}`,
+            promptText: joke.promptText,
+            answerText: joke.answerText,
+            compact: true,
+            actions: `<button class="btn ghost compact-btn" data-action="copy-history" data-history-index="${index}">${COPY.buttons.copy}</button>`
+          })).join("")}
+        </div>
+      ` : ""}
+    </section>
   `;
 }
 
@@ -1120,10 +1200,6 @@ function renderScoreboard() {
       </section>
 
       ${historyHtml()}
-
-      <div class="stage-footer-actions">
-        ${isHost() ? `<button class="btn primary" data-action="next-round">${isFinalNext ? COPY.buttons.final : COPY.buttons.nextRound}</button>` : `<p class="meta centered-meta">${COPY.messages.hostDecision}</p>`}
-      </div>
     </div>
   `;
 }
@@ -1148,14 +1224,12 @@ function renderFinished() {
         </div>
       </section>
       ${historyHtml()}
-      <div class="stage-footer-actions">
-        ${isHost() ? `<button class="btn primary" data-action="restart-game">${COPY.buttons.restart}</button>` : `<p class="meta centered-meta">${COPY.messages.hostCanRestart}</p>`}
-      </div>
     </div>
   `;
 }
 
 function render() {
+  const focusState = captureTypingFocus();
   if (!currentRoom || currentRoom.state !== "waiting" || !lobbySettingsOpen) {
     closeSettingsModal();
   }
@@ -1182,6 +1256,7 @@ function render() {
     else if (currentScreen === "notFound") renderNotFound();
     else renderHome();
     restartScreenAnimation();
+    restoreTypingFocus(focusState);
     return;
   }
 
@@ -1197,6 +1272,7 @@ function render() {
   app.insertAdjacentHTML("beforeend", roomControlsHtml());
   startTimerView();
   restartScreenAnimation();
+  restoreTypingFocus(focusState);
 }
 
 function restartScreenAnimation() {
@@ -1296,6 +1372,11 @@ document.addEventListener("click", (event) => {
 
   if (action === "refresh-lobbies") {
     requestOpenRooms();
+    render();
+  }
+
+  if (action === "toggle-history") {
+    historyOpen = !historyOpen;
     render();
   }
 
