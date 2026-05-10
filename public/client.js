@@ -1139,7 +1139,9 @@ function historyHtml() {
           <span>${COPY.labels.history}</span>
           <span class="history-count">0</span>
         </button>
-        <p class="meta history-empty">${COPY.empty.history}</p>
+        <div class="history-body">
+          <p class="meta history-empty">${COPY.empty.history}</p>
+        </div>
       </section>
     `;
   }
@@ -1148,7 +1150,8 @@ function historyHtml() {
   const latest = currentRoom.bestJokesHistory[latestIndex];
   const rest = currentRoom.bestJokesHistory
     .map((joke, index) => ({ joke, index }))
-    .filter((item) => item.index !== latestIndex);
+    .filter((item) => item.index !== latestIndex)
+    .reverse();
 
   return `
     <section class="history-disclosure ${historyOpen ? "is-open" : ""}">
@@ -1157,27 +1160,29 @@ function historyHtml() {
         <span class="history-count">${count}</span>
       </button>
 
-      <div class="history-preview">
-        ${jokeCardHtml({
-          meta: `Раунд ${latest.round} · ${latest.authorName} · голосов: ${latest.votesCount}${latest.tied ? " · ничья" : ""}`,
-          promptText: latest.promptText,
-          answerText: latest.answerText,
-          compact: true,
-          actions: `<button class="btn ghost compact-btn" data-action="copy-history" data-history-index="${latestIndex}">${COPY.buttons.copy}</button>`
-        })}
-      </div>
-
-      ${historyOpen && rest.length ? `
-        <div class="history compact-history">
-          ${rest.reverse().map(({ joke, index }) => jokeCardHtml({
-            meta: `Раунд ${joke.round} · ${joke.authorName} · голосов: ${joke.votesCount}${joke.tied ? " · ничья" : ""}`,
-            promptText: joke.promptText,
-            answerText: joke.answerText,
+      <div class="history-body">
+        <div class="history-preview">
+          ${jokeCardHtml({
+            meta: `Последняя · Раунд ${latest.round} · ${latest.authorName} · голосов: ${latest.votesCount}${latest.tied ? " · ничья" : ""}`,
+            promptText: latest.promptText,
+            answerText: latest.answerText,
             compact: true,
-            actions: `<button class="btn ghost compact-btn" data-action="copy-history" data-history-index="${index}">${COPY.buttons.copy}</button>`
-          })).join("")}
+            actions: `<button class="btn ghost compact-btn" data-action="copy-history" data-history-index="${latestIndex}">${COPY.buttons.copy}</button>`
+          })}
         </div>
-      ` : ""}
+
+        ${historyOpen && rest.length ? `
+          <div class="history compact-history">
+            ${rest.map(({ joke, index }) => jokeCardHtml({
+              meta: `Раунд ${joke.round} · ${joke.authorName} · голосов: ${joke.votesCount}${joke.tied ? " · ничья" : ""}`,
+              promptText: joke.promptText,
+              answerText: joke.answerText,
+              compact: true,
+              actions: `<button class="btn ghost compact-btn" data-action="copy-history" data-history-index="${index}">${COPY.buttons.copy}</button>`
+            })).join("")}
+          </div>
+        ` : ""}
+      </div>
     </section>
   `;
 }

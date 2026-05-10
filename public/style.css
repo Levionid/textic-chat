@@ -3222,3 +3222,323 @@ body.has-room-controls .toast {
   text-align: center;
   font-weight: 750;
 }
+
+/* Patch 9: room browser should breathe on desktop and show more lobbies at once */
+.game-card.server-list-card {
+  width: min(1040px, calc(100vw - 48px));
+  gap: clamp(14px, 2vh, 22px);
+}
+
+.lobby-browser-title {
+  margin-bottom: 0;
+}
+
+.lobby-browser-panel {
+  width: min(980px, 100%);
+  height: min(68vh, 680px);
+  min-height: 500px;
+  padding: 18px;
+  gap: 14px;
+}
+
+.lobby-browser-panel .open-rooms {
+  gap: 12px;
+  padding: 4px 8px 12px 4px;
+}
+
+.open-room {
+  min-height: 96px;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  padding: 14px 16px;
+  gap: 14px;
+}
+
+.open-room-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "host code"
+    "meta code";
+  column-gap: 18px;
+  row-gap: 6px;
+  align-items: center;
+}
+
+.open-room-host {
+  grid-area: host;
+  min-width: 0;
+  font-size: clamp(17px, 1.45vw, 21px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.open-room-code {
+  grid-area: code;
+  align-self: center;
+  justify-self: start;
+  font-size: clamp(24px, 2.6vw, 34px);
+  line-height: 1;
+  letter-spacing: 0.07em;
+}
+
+.open-room-main .meta {
+  grid-area: meta;
+  margin: 0;
+}
+
+.open-room-stats span {
+  white-space: nowrap;
+}
+
+.open-room .btn {
+  min-width: 92px;
+}
+
+@media (min-width: 901px) {
+  .lobby-browser-panel {
+    max-height: calc(100vh - 210px);
+  }
+}
+
+@media (max-width: 900px) and (orientation: portrait) {
+  .game-card.server-list-card {
+    width: min(100%, 760px);
+  }
+
+  .lobby-browser-panel {
+    width: 100%;
+    height: min(68svh, 640px);
+    min-height: 480px;
+  }
+
+  .open-room {
+    min-height: 104px;
+  }
+}
+
+@media (max-width: 620px) {
+  .game-card.server-list-card {
+    width: 100%;
+  }
+
+  .lobby-browser-panel {
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    padding: 14px;
+  }
+
+  .lobby-browser-panel .open-rooms {
+    overflow: visible;
+    padding: 0;
+  }
+
+  .open-room {
+    grid-template-columns: 1fr;
+    min-height: 0;
+    padding: 16px;
+  }
+
+  .open-room-main {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "host"
+      "code"
+      "meta";
+  }
+
+  .open-room-host {
+    white-space: normal;
+  }
+
+  .open-room-code {
+    font-size: 30px;
+  }
+
+  .open-room .btn {
+    width: 100%;
+  }
+}
+
+/* === Patch 10: sane "Лучшие шутки" accordion === */
+.history-disclosure {
+  width: min(840px, 100%) !important;
+  margin: 18px auto 0 !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 24px !important;
+  background: rgba(32, 32, 42, 0.70) !important;
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.22) !important;
+  overflow: hidden !important;
+}
+
+.history-summary {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center !important;
+  gap: 12px !important;
+  width: 100% !important;
+  min-height: 58px !important;
+  margin: 0 !important;
+  padding: 14px 18px !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--border) !important;
+  border-radius: 0 !important;
+  color: var(--text) !important;
+  background: rgba(32, 32, 42, 0.92) !important;
+  font-size: clamp(20px, 2vw, 26px) !important;
+  font-weight: 950 !important;
+  text-align: left !important;
+}
+
+.history-summary > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-count {
+  margin-left: 0 !important;
+  justify-self: end;
+  min-width: 34px;
+  height: 34px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0 10px !important;
+  border: 1px solid rgba(255, 209, 102, 0.34) !important;
+  border-radius: 999px !important;
+  color: #ffe2a3 !important;
+  background: rgba(255, 209, 102, 0.12) !important;
+  font-size: 14px !important;
+  font-weight: 900 !important;
+}
+
+.history-summary:not(:disabled)::after {
+  content: "▾" !important;
+  display: inline-grid;
+  place-items: center;
+  color: #ffe2a3;
+  font-size: 16px;
+  transition: transform 0.18s ease;
+}
+
+.history-disclosure.is-open .history-summary::after {
+  transform: rotate(180deg);
+}
+
+.history-body {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  max-height: min(46svh, 520px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 209, 102, 0.45) transparent;
+}
+
+.history-body::-webkit-scrollbar {
+  width: 9px;
+}
+
+.history-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.history-body::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255, 209, 102, 0.45), rgba(255, 107, 107, 0.42));
+  border: 2px solid rgba(32, 32, 42, 0.92);
+}
+
+.history-preview,
+.compact-history {
+  display: grid !important;
+  gap: 12px !important;
+  width: 100% !important;
+  max-height: none !important;
+  padding: 0 !important;
+  overflow: visible !important;
+}
+
+.history-preview .joke,
+.compact-history .joke,
+.history-preview .compact-joke,
+.compact-history .compact-joke {
+  width: 100% !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  padding: 18px 20px !important;
+  border-radius: 20px !important;
+  overflow: visible !important;
+}
+
+.compact-history .compact-joke {
+  background: rgba(32, 32, 42, 0.58) !important;
+  box-shadow: none !important;
+}
+
+.history-preview .joke-start,
+.compact-history .joke-start {
+  display: block !important;
+  max-width: 100% !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+  word-break: break-word !important;
+  line-height: 1.35 !important;
+}
+
+.history-preview .joke-end,
+.compact-history .joke-end {
+  display: block !important;
+  max-width: 100% !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+  word-break: break-word !important;
+}
+
+.history-preview .joke-actions,
+.compact-history .joke-actions {
+  margin-top: 4px !important;
+}
+
+.history-empty {
+  margin: 0 !important;
+  padding: 12px 14px !important;
+  text-align: center;
+}
+
+@media (max-width: 620px) {
+  .history-disclosure {
+    width: 100% !important;
+    margin-top: 14px !important;
+    border-radius: 22px !important;
+  }
+
+  .history-summary {
+    min-height: 56px !important;
+    padding: 13px 14px !important;
+    font-size: 21px !important;
+  }
+
+  .history-body {
+    max-height: min(48svh, 440px);
+    padding: 12px;
+    gap: 10px;
+  }
+
+  .history-preview .joke,
+  .compact-history .joke,
+  .history-preview .compact-joke,
+  .compact-history .compact-joke {
+    padding: 16px !important;
+  }
+}
