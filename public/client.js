@@ -7,6 +7,12 @@ const socket = io(BACKEND_URL);
 
 const app = document.getElementById("app");
 const toast = document.getElementById("toast");
+const controlsRoot = document.getElementById("roomControlsRoot") || (() => {
+  const node = document.createElement("div");
+  node.id = "roomControlsRoot";
+  document.body.appendChild(node);
+  return node;
+})();
 const STORAGE_KEYS = {
   sessionId: "dobeyFrazu.sessionId",
   roomCode: "dobeyFrazu.roomCode",
@@ -968,6 +974,15 @@ function roomControlsHtml() {
   `;
 }
 
+function renderRoomControlsRoot() {
+  if (!controlsRoot) return;
+  controlsRoot.innerHTML = currentRoom ? roomControlsHtml() : "";
+}
+
+function clearRoomControlsRoot() {
+  if (controlsRoot) controlsRoot.innerHTML = "";
+}
+
 function stageTitle(title, eyebrow = "") {
   return `
     <header class="game-stage-header">
@@ -1270,6 +1285,7 @@ function render() {
     else if (currentScreen === "lobbyMissing") renderLobbyMissing();
     else if (currentScreen === "notFound") renderNotFound();
     else renderHome();
+    clearRoomControlsRoot();
     restartScreenAnimation();
     restoreTypingFocus(focusState);
     return;
@@ -1284,7 +1300,7 @@ function render() {
   if (state === "voting") renderVoting();
   if (state === "scoreboard") renderScoreboard();
   if (state === "finished") renderFinished();
-  app.insertAdjacentHTML("beforeend", roomControlsHtml());
+  renderRoomControlsRoot();
   startTimerView();
   restartScreenAnimation();
   restoreTypingFocus(focusState);
