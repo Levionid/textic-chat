@@ -2114,3 +2114,668 @@ body::after {
     width: 100%;
   }
 }
+
+/* === Patch 4: tablet + mobile portrait adaptation === */
+:root {
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-top: env(safe-area-inset-top, 0px);
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body.home-screen .app,
+body.simple-screen .app,
+body.waiting-screen .app,
+body.stage-screen .app,
+body.scoreboard-screen .app {
+  min-height: 100svh;
+}
+
+button,
+.btn,
+.open-room,
+.history-summary {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Tablets and small laptops */
+@media (max-width: 1024px) {
+  body {
+    padding-bottom: calc(108px + var(--safe-bottom));
+  }
+
+  .app {
+    width: min(100% - 28px, 900px);
+    padding-inline: 0;
+  }
+
+  body.home-screen .app,
+  body.simple-screen .app,
+  body.stage-screen .app {
+    align-content: center;
+    padding-block: clamp(18px, 4svh, 42px) calc(110px + var(--safe-bottom));
+  }
+
+  body.waiting-screen .app,
+  body.scoreboard-screen .app {
+    align-content: start;
+    padding-block: clamp(18px, 4svh, 40px) calc(118px + var(--safe-bottom));
+  }
+
+  .game-card,
+  .stage-panel,
+  .invite-panel,
+  .bento-card,
+  .home-panel,
+  .lobby-browser-panel {
+    border-radius: 24px;
+  }
+
+  .game-card.waiting-room-card,
+  .game-card.game-stage-card,
+  .game-card.compact-game-stage-card,
+  .game-card.scoreboard-stage-card,
+  .game-card.server-list-card,
+  .game-card.create-game-card {
+    width: min(100%, 900px);
+  }
+
+  .waiting-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .waiting-players {
+    min-height: 0;
+  }
+
+  .waiting-side {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .invite-panel {
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  }
+
+  .game-stage-title {
+    font-size: clamp(34px, 6vw, 54px);
+  }
+
+  .stage-panel,
+  .stage-jokes,
+  .history-disclosure,
+  .stage-scores,
+  .tie-banner {
+    width: min(100%, 820px);
+  }
+
+  .room-controls {
+    width: min(900px, calc(100% - 28px));
+    bottom: calc(14px + var(--safe-bottom));
+  }
+}
+
+/* Portrait tablets: one clear column, no desktop squeezing */
+@media (max-width: 900px) and (orientation: portrait) {
+  .app {
+    width: min(100% - 24px, 760px);
+  }
+
+  body.home-screen .app,
+  body.simple-screen .app {
+    align-content: center;
+  }
+
+  .hero {
+    width: min(620px, 100%);
+    margin-bottom: 22px;
+  }
+
+  h1 {
+    font-size: clamp(46px, 9vw, 70px);
+  }
+
+  .subtitle {
+    width: min(560px, 100%);
+  }
+
+  .game-card.plain-menu-card {
+    width: min(520px, 100%);
+    min-height: auto;
+  }
+
+  .simple-menu {
+    width: min(420px, 100%);
+  }
+
+  .menu-btn {
+    min-height: 58px;
+    font-size: 19px;
+  }
+
+  .invite-panel,
+  .waiting-grid,
+  .grid,
+  .compact-grid,
+  .settings-checks {
+    grid-template-columns: 1fr;
+  }
+
+  .invite-code-block {
+    justify-items: center;
+    text-align: center;
+  }
+
+  .invite-code-block .room-code {
+    width: min(340px, 100%);
+    justify-content: center;
+  }
+
+  .invite-actions,
+  .settings-editor-actions,
+  .create-actions {
+    justify-content: center;
+  }
+
+  .lobby-browser-panel {
+    width: 100%;
+    height: auto;
+    min-height: min(520px, calc(100svh - 230px));
+  }
+
+  .open-room {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .open-room .btn {
+    width: 100%;
+  }
+
+  .score-row,
+  .title-row,
+  .pill {
+    align-items: center;
+  }
+
+  .room-controls {
+    max-width: 760px;
+  }
+}
+
+/* Big phones and narrow tablets */
+@media (max-width: 720px) {
+  body {
+    padding-bottom: calc(168px + var(--safe-bottom));
+  }
+
+  .app {
+    width: min(100% - 18px, 680px);
+  }
+
+  body.home-screen .app,
+  body.simple-screen .app,
+  body.waiting-screen .app,
+  body.stage-screen .app,
+  body.scoreboard-screen .app {
+    min-height: 100svh;
+    padding-block: calc(14px + var(--safe-top)) calc(170px + var(--safe-bottom));
+  }
+
+  body.home-screen .app,
+  body.simple-screen .app,
+  body.stage-screen .app {
+    align-content: center;
+  }
+
+  body.waiting-screen .app,
+  body.scoreboard-screen .app {
+    align-content: start;
+  }
+
+  .hero {
+    margin-bottom: 18px;
+  }
+
+  .eyebrow,
+  .stage-eyebrow {
+    font-size: 12px;
+    padding: 5px 9px;
+  }
+
+  h1 {
+    font-size: clamp(36px, 11vw, 54px);
+  }
+
+  .subtitle {
+    font-size: 14px;
+    line-height: 1.35;
+  }
+
+  .panel-title,
+  .game-stage-title {
+    font-size: clamp(30px, 9vw, 44px);
+    line-height: 1.04;
+  }
+
+  .game-card,
+  .stage-panel,
+  .invite-panel,
+  .bento-card,
+  .home-panel,
+  .lobby-browser-panel,
+  .settings-modal,
+  .name-modal {
+    border-radius: 22px;
+  }
+
+  .game-card.plain-menu-card,
+  .game-card.server-list-card,
+  .game-card.create-game-card,
+  .game-card.waiting-room-card,
+  .game-card.game-stage-card,
+  .game-card.compact-game-stage-card,
+  .game-card.scoreboard-stage-card {
+    width: 100%;
+  }
+
+  .game-card.plain-menu-card {
+    gap: 14px;
+    min-height: auto;
+  }
+
+  .simple-menu {
+    width: min(390px, 100%);
+    gap: 11px;
+  }
+
+  .menu-btn {
+    min-height: 54px;
+  }
+
+  .screen-head,
+  .lobby-browser-toolbar,
+  .section-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .lobby-browser-toolbar .actions,
+  .section-row .actions {
+    justify-content: stretch;
+  }
+
+  .lobby-browser-toolbar .btn.icon-btn {
+    width: 100%;
+  }
+
+  .invite-panel,
+  .waiting-grid,
+  .grid,
+  .compact-grid,
+  .settings-checks {
+    grid-template-columns: 1fr;
+  }
+
+  .invite-panel {
+    padding: 14px;
+  }
+
+  .invite-code-block,
+  .invite-link-block {
+    justify-items: stretch;
+  }
+
+  .invite-code-block .room-code,
+  .room-code,
+  .invite-url {
+    width: 100%;
+  }
+
+  .invite-url {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .invite-actions,
+  .actions,
+  .modal-actions,
+  .settings-editor-actions,
+  .empty-actions,
+  .create-actions,
+  .joke-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    width: 100%;
+  }
+
+  .btn,
+  .open-room .btn,
+  .stage-actions .btn.primary,
+  .stage-footer-actions .btn.primary {
+    width: 100%;
+    min-width: 0;
+    min-height: 48px;
+  }
+
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+    padding: 13px 14px;
+  }
+
+  .input-stage,
+  .reveal-stage,
+  .countdown-stage {
+    min-height: auto;
+    align-content: start;
+  }
+
+  .input-stage-panel textarea {
+    min-height: 132px;
+  }
+
+  .progress-card {
+    padding: 13px 14px;
+  }
+
+  .stage-jokes,
+  .stage-panel,
+  .history-disclosure,
+  .stage-scores,
+  .tie-banner,
+  .input-stage-panel textarea,
+  .input-stage-panel .prompt-box,
+  .input-stage-panel .progress-card,
+  .stage-timer-row .timer,
+  .input-stage-panel .timer {
+    width: 100%;
+  }
+
+  .game-joke-card,
+  .compact-history .compact-joke {
+    padding: 16px;
+  }
+
+  .joke-start {
+    font-size: 18px;
+  }
+
+  .joke-end {
+    font-size: 16px;
+  }
+
+  .score-row,
+  .title-row,
+  .pill {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .score-row span:last-child,
+  .title-row .meta,
+  .player-status {
+    text-align: left;
+  }
+
+  .history-summary {
+    min-height: 50px;
+    padding: 12px 14px;
+    font-size: 20px;
+  }
+
+  .history-count {
+    margin-left: 0;
+    justify-self: end;
+  }
+
+  .compact-history {
+    max-height: 46svh;
+  }
+
+  .modal-backdrop {
+    padding: calc(14px + var(--safe-top)) 12px calc(14px + var(--safe-bottom));
+    place-items: end center;
+  }
+
+  .name-modal,
+  .settings-modal {
+    width: 100%;
+    max-height: calc(100svh - 28px - var(--safe-top) - var(--safe-bottom));
+    padding: 18px;
+  }
+
+  .settings-modal {
+    overflow-y: auto;
+  }
+
+  .room-controls {
+    left: 10px;
+    right: 10px;
+    bottom: calc(10px + var(--safe-bottom));
+    width: auto;
+    max-width: none;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding: 10px;
+    border-radius: 24px;
+    transform: none;
+  }
+
+  .room-controls-left,
+  .room-controls-right {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    margin: 0;
+  }
+
+  .room-controls-left .btn.primary,
+  .room-controls .btn {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .room-controls-note {
+    text-align: center;
+  }
+}
+
+/* Phones: portrait-first, compact and thumb-friendly */
+@media (max-width: 480px) {
+  body {
+    padding-bottom: calc(178px + var(--safe-bottom));
+  }
+
+  .app {
+    width: min(100% - 14px, 460px);
+  }
+
+  body.home-screen .app,
+  body.simple-screen .app,
+  body.waiting-screen .app,
+  body.stage-screen .app,
+  body.scoreboard-screen .app {
+    padding-block: calc(12px + var(--safe-top)) calc(180px + var(--safe-bottom));
+  }
+
+  .hero {
+    width: 100%;
+    margin-bottom: 16px;
+  }
+
+  .eyebrow,
+  .stage-eyebrow {
+    margin-bottom: 4px;
+  }
+
+  h1 {
+    font-size: clamp(34px, 12vw, 46px);
+    letter-spacing: -0.055em;
+  }
+
+  .subtitle {
+    max-width: 330px;
+    font-size: 13px;
+  }
+
+  .panel-title,
+  .game-stage-title {
+    font-size: clamp(28px, 10.5vw, 38px);
+  }
+
+  .section-title {
+    font-size: 20px;
+  }
+
+  .game-stage {
+    gap: 14px;
+  }
+
+  .stage-panel,
+  .invite-panel,
+  .bento-card,
+  .home-panel,
+  .lobby-browser-panel,
+  .progress-card,
+  .history-summary {
+    padding: 14px;
+  }
+
+  .game-card {
+    padding: 12px;
+  }
+
+  .simple-menu {
+    width: 100%;
+  }
+
+  .menu-btn {
+    min-height: 52px;
+    font-size: 17px;
+  }
+
+  .room-code,
+  .invite-code-block .room-code {
+    min-height: 58px;
+    font-size: clamp(30px, 13vw, 48px);
+  }
+
+  .invite-code-block .room-code {
+    min-height: 70px;
+  }
+
+  .lobby-count,
+  .lobby-browser-count,
+  .history-count {
+    width: fit-content;
+  }
+
+  .open-room {
+    padding: 14px;
+  }
+
+  .open-room-code {
+    font-size: 28px;
+  }
+
+  .input-stage-panel textarea {
+    min-height: 118px;
+  }
+
+  .stage-prompt,
+  .stage-message,
+  .prompt-box {
+    padding: 14px;
+  }
+
+  .countdown-number {
+    width: 118px;
+    height: 118px;
+    font-size: 64px;
+  }
+
+  .game-joke-card {
+    gap: 10px;
+    padding: 14px;
+  }
+
+  .game-joke-card .joke-meta,
+  .meta {
+    font-size: 13px;
+  }
+
+  .joke-start {
+    font-size: 17px;
+  }
+
+  .joke-end {
+    padding-left: 12px;
+    font-size: 15px;
+  }
+
+  .stage-scores .score-row {
+    border-radius: 18px;
+  }
+
+  .history-summary {
+    grid-template-columns: 1fr auto auto;
+    display: grid;
+    align-items: center;
+    gap: 10px;
+    font-size: 19px;
+  }
+
+  .history-summary::after {
+    justify-self: end;
+  }
+
+  .settings-modal .settings-editor,
+  .settings-editor {
+    gap: 9px;
+  }
+
+  .check-row,
+  .settings-checks .check-row {
+    min-height: 44px;
+    padding: 10px 11px;
+    font-size: 14px;
+  }
+
+  .toast {
+    right: 10px;
+    left: 10px;
+    bottom: calc(188px + var(--safe-bottom));
+    max-width: none;
+    width: auto;
+  }
+}
+
+/* Very narrow phones */
+@media (max-width: 360px) {
+  .app {
+    width: min(100% - 10px, 350px);
+  }
+
+  .panel-title,
+  .game-stage-title {
+    font-size: clamp(25px, 10vw, 34px);
+  }
+
+  .btn {
+    padding-inline: 14px;
+  }
+
+  .room-controls {
+    left: 6px;
+    right: 6px;
+  }
+}
