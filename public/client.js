@@ -52,7 +52,7 @@ const SOUND_FILES = {
 };
 
 const MAX_AUDIO_BYTES = 20 * 1024 * 1024;
-const AUDIO_ACCEPT = "audio/*,.mp3,.wav,.ogg,.webm,.m4a,.aac,.flac";
+const AUDIO_ACCEPT = "audio/*,video/webm,video/mp4,.mp3,.wav,.ogg,.webm,.m4a,.aac,.flac";
 
 
 const COPY = {
@@ -175,7 +175,7 @@ const COPY = {
     promptSubmitted: "Начало отправлено. Ждем остальных.",
     answerSubmitted: "Концовка отправлена. Ждем остальных.",
     audioTooLarge: "Аудио должно быть не больше 20 МБ.",
-    audioUnsupported: "Выберите аудиофайл: mp3, wav, ogg, webm, m4a, aac или flac.",
+    audioUnsupported: "Выберите аудио: mp3, wav, ogg, webm, m4a, aac, flac или запись webm/mp4.",
     audioReady: "Аудио добавлено.",
     audioRemoved: "Аудио убрано.",
     recordingStarted: "Запись началась. Нажмите «Остановить», когда закончите.",
@@ -487,9 +487,28 @@ function getAudioDraft(type) {
 
 function isAllowedAudioFile(file) {
   if (!file) return false;
-  const type = String(file.type || "").toLowerCase();
+  const type = String(file.type || "").toLowerCase().split(";")[0];
   const name = String(file.name || "").toLowerCase();
-  return type.startsWith("audio/") || /\.(mp3|wav|ogg|webm|m4a|aac|flac)$/i.test(name);
+  const allowedExtension = /\.(mp3|wav|ogg|webm|m4a|aac|flac)$/i.test(name);
+  const allowedContainer = ["video/webm", "video/mp4", "application/ogg"].includes(type);
+  return type.startsWith("audio/") || allowedExtension || allowedContainer;
+}
+
+function recordingExtensionFromMime(mime = "") {
+  const clean = String(mime || "").toLowerCase();
+  if (clean.includes("mpeg") || clean.includes("mp3")) return "mp3";
+  if (clean.includes("mp4")) return "m4a";
+  if (clean.includes("ogg")) return "ogg";
+  return "webm";
+}
+
+function recordingDisplayType(mime = "") {
+  const clean = String(mime || "").toLowerCase();
+  if (clean.includes("mpeg") || clean.includes("mp3")) return "audio/mpeg";
+  if (clean.includes("mp4")) return "audio/mp4";
+  if (clean.includes("ogg")) return "audio/ogg";
+  if (clean.includes("webm")) return "audio/webm";
+  return clean || "audio/webm";
 }
 
 function blobToDataUrl(blob) {
@@ -516,10 +535,20 @@ async function fileToAudioPayload(file, fallbackName = "voice.webm") {
 
 function audioPlayerHtml(audio, { compact = false } = {}) {
   if (!audio?.dataUrl) return "";
+  const label = audio.name || "Голосовое";
+  const safeSrc = escapeHtml(audio.dataUrl);
+  const bars = Array.from({ length: 18 }, (_, index) => `<span style="--i:${index}"></span>`).join("");
   return `
-    <div class="audio-chip ${compact ? "audio-chip-compact" : ""}">
-      <span class="audio-chip-label">${escapeHtml(audio.name || "Голосовое")}</span>
-      <audio controls preload="metadata" src="${escapeHtml(audio.dataUrl)}"></audio>
+    <div class="voice-message ${compact ? "voice-message-compact" : ""}">
+      <button class="voice-play" type="button" data-action="toggle-audio" aria-label="Воспроизвести аудио">▶</button>
+      <div class="voice-body">
+        <div class="voice-wave" aria-hidden="true">${bars}</div>
+        <div class="voice-meta-row">
+          <span class="voice-title">${escapeHtml(label)}</span>
+          <span class="voice-kind">голосовое</span>
+        </div>
+      </div>
+      <audio preload="metadata" src="${safeSrc}"></audio>
     </div>
   `;
 }
@@ -529,18 +558,27 @@ function audioInputHtml(type) {
   const isRecording = activeRecording?.type === type;
   const label = type === "prompt" ? "голосовое начало" : "голосовая концовка";
   return `
-    <div class="audio-tools">
+    <div class="audio-tools ${isRecording ? "is-recording" : ""}">
       <div class="audio-tools-head">
-        <span class="meta">Можно написать текстом, записать голосом или прикрепить аудиофайл до 20 МБ.</span>
+        <div>
+          <span class="audio-tools-title">Голос или аудио</span>
+          <p class="meta audio-tools-note">Можно написать текстом, записать голосом или прикрепить файл до 20 МБ.</p>
+        </div>
+        <span class="audio-limit">20 МБ</span>
       </div>
       ${audio ? `
         <div class="audio-current">
           ${audioPlayerHtml(audio)}
-          <button class="inline-edit" data-action="remove-audio-${type}" type="button">${COPY.buttons.removeAudio}</button>
+          <button class="inline-edit audio-remove-link" data-action="remove-audio-${type}" type="button">${COPY.buttons.removeAudio}</button>
         </div>
-      ` : `<p class="meta audio-empty">Аудио не добавлено.</p>`}
+      ` : `
+        <div class="audio-empty-card">
+          <span class="audio-empty-icon">🎙</span>
+          <span>${isRecording ? "Идёт запись… нажмите «Остановить»." : "Аудио пока не добавлено"}</span>
+        </div>
+      `}
       <div class="audio-tool-actions">
-        <button class="btn ghost compact-btn" type="button" data-action="${isRecording ? `stop-recording-${type}` : `start-recording-${type}`}">${isRecording ? COPY.buttons.stopRecording : COPY.buttons.recordAudio}</button>
+        <button class="btn ghost compact-btn record-btn" type="button" data-action="${isRecording ? `stop-recording-${type}` : `start-recording-${type}`}">${isRecording ? COPY.buttons.stopRecording : COPY.buttons.recordAudio}</button>
         <label class="btn ghost compact-btn audio-file-label">
           ${COPY.buttons.chooseAudio}
           <input class="sr-only" type="file" accept="${AUDIO_ACCEPT}" data-audio-input="${type}" aria-label="Прикрепить ${label}">
@@ -563,10 +601,15 @@ async function startAudioRecording(type) {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     const preferredTypes = [
+      "audio/mpeg",
+      "audio/mp3",
+      "audio/mp4;codecs=mp4a.40.2",
+      "audio/mp4",
       "audio/webm;codecs=opus",
       "audio/webm",
       "audio/ogg;codecs=opus",
-      "audio/mp4"
+      "video/webm;codecs=opus",
+      "video/webm"
     ];
     const mimeType = preferredTypes.find((item) => MediaRecorder.isTypeSupported?.(item));
     const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
@@ -578,10 +621,14 @@ async function startAudioRecording(type) {
 
     recorder.addEventListener("stop", async () => {
       stream.getTracks().forEach((track) => track.stop());
-      const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
+      const rawMime = recorder.mimeType || "audio/webm";
+      const displayType = recordingDisplayType(rawMime);
+      const blob = new Blob(chunks, { type: displayType });
+      const ext = recordingExtensionFromMime(displayType);
+      const fileName = `voice-${Date.now()}.${ext}`;
       activeRecording = null;
       try {
-        const payload = await fileToAudioPayload(new File([blob], `voice-${Date.now()}.webm`, { type: blob.type }), `voice-${Date.now()}.webm`);
+        const payload = await fileToAudioPayload(new File([blob], fileName, { type: displayType }), fileName);
         setAudioDraft(type, payload);
         showToast(COPY.messages.audioReady);
       } catch (error) {
@@ -1650,6 +1697,38 @@ document.addEventListener("click", (event) => {
   }
 
   if (!button) return;
+
+  if (action === "toggle-audio") {
+    const voice = button.closest(".voice-message");
+    const audio = voice?.querySelector("audio");
+    if (!audio) return;
+    document.querySelectorAll(".voice-message audio").forEach((item) => {
+      if (item !== audio) {
+        item.pause();
+        const otherButton = item.closest(".voice-message")?.querySelector(".voice-play");
+        if (otherButton) otherButton.textContent = "▶";
+      }
+    });
+    if (audio.paused) {
+      audio.play().then(() => {
+        button.textContent = "Ⅱ";
+        voice.classList.add("is-playing");
+      }).catch(() => showToast(COPY.messages.audioUnsupported));
+      audio.onended = () => {
+        button.textContent = "▶";
+        voice.classList.remove("is-playing");
+      };
+      audio.onpause = () => {
+        button.textContent = "▶";
+        voice.classList.remove("is-playing");
+      };
+    } else {
+      audio.pause();
+      button.textContent = "▶";
+      voice.classList.remove("is-playing");
+    }
+    return;
+  }
 
   if (action === "home") {
     navigateTo("home");

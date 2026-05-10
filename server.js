@@ -138,7 +138,10 @@ const ALLOWED_AUDIO_TYPES = new Set([
   "audio/aac",
   "audio/x-m4a",
   "audio/flac",
-  "audio/x-flac"
+  "audio/x-flac",
+  "video/webm",
+  "video/mp4",
+  "application/ogg"
 ]);
 const RECONNECT_GRACE_MS = 6000;
 
@@ -171,8 +174,15 @@ function cleanAudio(raw) {
   const base64 = match[2];
   const bytes = Math.max(Number(raw.size) || 0, estimateBase64Bytes(base64));
 
-  const allowedByType = ALLOWED_AUDIO_TYPES.has(type) || ALLOWED_AUDIO_TYPES.has(dataType) || type.startsWith("audio/") || dataType.startsWith("audio/");
   const allowedByName = /\.(mp3|wav|ogg|webm|m4a|aac|flac)$/i.test(name);
+  const allowedContainerType = ["video/webm", "video/mp4", "application/ogg"].includes(type);
+  const allowedContainerDataType = ["video/webm", "video/mp4", "application/ogg"].includes(dataType);
+  const allowedByType =
+    ALLOWED_AUDIO_TYPES.has(type) ||
+    ALLOWED_AUDIO_TYPES.has(dataType) ||
+    type.startsWith("audio/") ||
+    dataType.startsWith("audio/") ||
+    ((allowedContainerType || allowedContainerDataType) && allowedByName);
 
   if (!allowedByType && !allowedByName) return { error: COPY.errors.audioUnsupported };
   if (bytes > AUDIO_MAX_BYTES) return { error: COPY.errors.audioTooLarge };
