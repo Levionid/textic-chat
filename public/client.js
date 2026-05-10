@@ -52,6 +52,7 @@ const SOUND_FILES = {
 };
 
 const MAX_AUDIO_BYTES = 20 * 1024 * 1024;
+const MAX_RECORDING_MS = 60 * 1000;
 const AUDIO_ACCEPT = "audio/*,video/webm,video/mp4,.mp3,.wav,.ogg,.webm,.m4a,.aac,.flac";
 
 
@@ -69,7 +70,13 @@ const COPY = {
     roundVotes: "Результаты голосования",
     history: "Лучшие шутки",
     titles: "Титулы",
-    finalTitle: "Финал"
+    finalTitle: "Финал",
+    grandVoting: "Шутка вечера",
+    personalPodium: "Личный подиум",
+    pairAwards: "Лучшие связки",
+    trioAwards: "Трио вечера",
+    otherPlayers: "Остальные игроки",
+    specialRoles: "Особые роли"
   },
   buttons: {
     openCreate: "Собрать лобби",
@@ -95,12 +102,13 @@ const COPY = {
     removeAudio: "Убрать аудио",
     startVoting: "Перейти к голосованию",
     vote: "Отдать голос",
+    grandVote: "Выбрать шутку вечера",
     ownAnswer: "Это ваша концовка",
     copyJoke: "Утащить шутку",
     copyBest: "Скопировать шутку",
     copy: "Скопировать",
     nextRound: "Еще раунд, и точно всё",
-    final: "Показать финал",
+    final: "Выбрать шутку вечера",
     restart: "Вернуть всех в лобби",
     editName: "Сменить ник",
     leaveRoom: "Выйти",
@@ -119,7 +127,8 @@ const COPY = {
     scoreboard: (round) => `Раунд ${round} · Итоги`,
     bestSingle: "Лучшая шутка раунда",
     bestMultiple: "Лучшие шутки раунда",
-    finished: "Финал игры"
+    finished: "Финал игры",
+    grandVoting: "Выберите шутку вечера"
   },
   placeholders: {
     name: "Например, Артур",
@@ -178,10 +187,12 @@ const COPY = {
     audioUnsupported: "Выберите аудио: mp3, wav, ogg, webm, m4a, aac, flac или запись webm/mp4.",
     audioReady: "Аудио добавлено.",
     audioRemoved: "Аудио убрано.",
-    recordingStarted: "Запись началась. Нажмите «Остановить», когда закончите.",
+    recordingStarted: "Запись началась. Максимум 1 минута.",
+    recordingLimit: "Запись остановлена: максимум 1 минута.",
     micDenied: "Не получилось включить микрофон. Проверьте разрешения браузера.",
     fileReadFailed: "Не получилось прочитать аудиофайл.",
     voteSubmitted: "Голос принят. Ждем остальных.",
+    grandVoteSubmitted: "Финальный голос принят. Собираем итоги вечера.",
     hostStartsVoting: "Ждем, пока хост запустит голосование.",
     hostDecision: "Хост выбирает следующий шаг.",
     hostCanRestart: "Хост может вернуть всех в лобби.",
@@ -393,6 +404,17 @@ function hasVoted() {
   return currentRoom?.votes.some((vote) => vote.voterId === getMyId());
 }
 
+function hasGrandVoted() {
+  return currentRoom?.grandFinal?.votes?.some((vote) => vote.voterId === getMyId());
+}
+
+function canVoteGrandJoke(joke) {
+  const candidates = currentRoom?.grandFinal?.candidates || [];
+  const available = candidates.filter((item) => item.promptAuthorId !== getMyId() && item.answerAuthorId !== getMyId());
+  if (!available.length) return true;
+  return joke.promptAuthorId !== getMyId() && joke.answerAuthorId !== getMyId();
+}
+
 function timerHtml() {
   if (!currentRoom?.timerEndsAt) return "";
   return `<div class="timer" id="timerText">Осталось: ${getRemainingSeconds()} сек.</div>`;
@@ -521,17 +543,60 @@ function blobToDataUrl(blob) {
   });
 }
 
-async function fileToAudioPayload(file, fallbackName = "voice.webm") {
+function getAudioDurationFromUrl(url) {
+  return new Promise((resolve) => {
+    const audio = document.createElement("audio");
+    audio.preload = "metadata";
+    audio.onloadedmetadata = () => {
+      const durationMs = Number.isFinite(audio.duration) ? Math.round(audio.duration * 1000) : 0;
+      URL.revokeObjectURL(url);
+      resolve(durationMs);
+    };
+    audio.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(0);
+    };
+    audio.src = url;
+  });
+}
+
+async function getFileAudioDurationMs(file) {
+  try {
+    const url = URL.createObjectURL(file);
+    return await getAudioDurationFromUrl(url);
+  } catch (error) {
+    return 0;
+  }
+}
+
+async function fileToAudioPayload(file, fallbackName = "voice.webm", source = "uploaded", durationMs = null) {
   if (!file) return null;
   if (file.size > MAX_AUDIO_BYTES) throw new Error("audio-too-large");
   if (!isAllowedAudioFile(file)) throw new Error("audio-unsupported");
   const dataUrl = await blobToDataUrl(file);
+  const resolvedDurationMs = Number.isFinite(durationMs) && durationMs !== null
+    ? Math.max(0, Math.round(durationMs))
+    : await getFileAudioDurationMs(file);
   return {
+    id: crypto.randomUUID ? crypto.randomUUID() : `audio-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     name: String(file.name || fallbackName).slice(0, 120),
     type: file.type || "audio/webm",
     size: file.size,
+    source,
+    durationMs: resolvedDurationMs,
     dataUrl
   };
+}
+
+async function applyAudioFile(type, file) {
+  try {
+    const payload = await fileToAudioPayload(file, file.name || "audio-file", "uploaded");
+    setAudioDraft(type, payload);
+    showToast(COPY.messages.audioReady);
+    render();
+  } catch (error) {
+    showToast(error.message === "audio-too-large" ? COPY.messages.audioTooLarge : COPY.messages.audioUnsupported);
+  }
 }
 
 function formatAudioTime(seconds) {
@@ -548,12 +613,12 @@ function voiceBarsHtml(count = 36) {
 function audioPlayerHtml(audio, { compact = false } = {}) {
   if (!audio?.dataUrl) return "";
   const safeSrc = escapeHtml(audio.dataUrl);
-  const bars = voiceBarsHtml(compact ? 24 : 38);
+  const bars = voiceBarsHtml(compact ? 28 : 48);
   return `
     <div class="voice-message ${compact ? "voice-message-compact" : ""}">
       <button class="voice-play" type="button" data-action="toggle-audio" aria-label="Воспроизвести аудио">▶</button>
       <div class="voice-body">
-        <div class="voice-wave" aria-hidden="true">${bars}</div>
+        <div class="voice-wave" data-voice-seek role="slider" aria-label="Перемотать аудио" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">${bars}</div>
         <div class="voice-meta-row">
           <span class="voice-time">0:00 / 0:00</span>
           <span class="voice-kind">голосовое</span>
@@ -569,11 +634,11 @@ function audioInputHtml(type) {
   const isRecording = activeRecording?.type === type;
   const label = type === "prompt" ? "голосовое начало" : "голосовая концовка";
   return `
-    <div class="audio-tools ${isRecording ? "is-recording" : ""}">
+    <div class="audio-tools ${isRecording ? "is-recording" : ""}" data-audio-drop="${type}">
       <div class="audio-tools-head">
         <div>
           <span class="audio-tools-title">Голос или аудио</span>
-          <p class="meta audio-tools-note">Можно написать текстом, записать голосом или прикрепить файл до 20 МБ.</p>
+          <p class="meta audio-tools-note">Можно написать текстом, записать голосом, прикрепить или перетащить аудиофайл до 20 МБ.</p>
         </div>
         <span class="audio-limit">20 МБ</span>
       </div>
@@ -637,6 +702,10 @@ async function startAudioRecording(type) {
     });
 
     recorder.addEventListener("stop", async () => {
+      if (activeRecording?.stopTimer) {
+        clearTimeout(activeRecording.stopTimer);
+        activeRecording.stopTimer = null;
+      }
       stream.getTracks().forEach((track) => track.stop());
       const rawMime = recorder.mimeType || "audio/webm";
       const displayType = recordingDisplayType(rawMime);
@@ -646,7 +715,8 @@ async function startAudioRecording(type) {
       activeRecording = null;
       stopRecordingTicker();
       try {
-        const payload = await fileToAudioPayload(new File([blob], fileName, { type: displayType }), fileName);
+        const durationMs = activeRecording?.startedAt ? Math.min(MAX_RECORDING_MS, Date.now() - activeRecording.startedAt) : 0;
+        const payload = await fileToAudioPayload(new File([blob], fileName, { type: displayType }), fileName, "recorded", durationMs);
         setAudioDraft(type, payload);
         showToast(COPY.messages.audioReady);
       } catch (error) {
@@ -655,7 +725,12 @@ async function startAudioRecording(type) {
       render();
     });
 
-    activeRecording = { type, recorder, stream, startedAt: Date.now() };
+    activeRecording = { type, recorder, stream, startedAt: Date.now(), stopTimer: null };
+    activeRecording.stopTimer = setTimeout(() => {
+      if (!activeRecording || activeRecording.recorder !== recorder) return;
+      showToast(COPY.messages.recordingLimit);
+      stopAudioRecording();
+    }, MAX_RECORDING_MS);
     recorder.start();
     showToast(COPY.messages.recordingStarted);
     render();
@@ -667,7 +742,7 @@ async function startAudioRecording(type) {
 
 function updateRecordingTimer() {
   if (!activeRecording?.startedAt) return;
-  const elapsed = (Date.now() - activeRecording.startedAt) / 1000;
+  const elapsed = Math.min(MAX_RECORDING_MS / 1000, (Date.now() - activeRecording.startedAt) / 1000);
   document.querySelectorAll("[data-recording-time]").forEach((node) => {
     node.textContent = formatAudioTime(elapsed);
   });
@@ -686,25 +761,82 @@ function stopRecordingTicker() {
 
 function stopAudioRecording() {
   if (!activeRecording) return;
+  if (activeRecording.stopTimer) {
+    clearTimeout(activeRecording.stopTimer);
+    activeRecording.stopTimer = null;
+  }
   if (activeRecording.recorder.state !== "inactive") {
     activeRecording.recorder.stop();
   }
 }
 
+function updateVoiceWaveProgress(voice, audio) {
+  if (!voice || !audio) return;
+  const wave = voice.querySelector(".voice-wave");
+  if (!wave) return;
+  const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0;
+  const progress = duration ? Math.max(0, Math.min(1, (audio.currentTime || 0) / duration)) : 0;
+  wave.style.setProperty("--voice-progress", `${Math.round(progress * 100)}%`);
+  wave.setAttribute("aria-valuenow", String(Math.round(progress * 100)));
+  const bars = Array.from(wave.querySelectorAll("span"));
+  const activeCount = Math.round(progress * bars.length);
+  bars.forEach((bar, index) => bar.classList.toggle("is-active", index < activeCount));
+}
+
 function updateVoiceMessageTime(voice, audio) {
   if (!voice || !audio) return;
   const timeNode = voice.querySelector(".voice-time");
-  if (!timeNode) return;
-  const current = formatAudioTime(audio.currentTime || 0);
-  const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? formatAudioTime(audio.duration) : "0:00";
-  timeNode.textContent = `${current} / ${duration}`;
+  if (timeNode) {
+    const current = formatAudioTime(audio.currentTime || 0);
+    const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? formatAudioTime(audio.duration) : "0:00";
+    timeNode.textContent = `${current} / ${duration}`;
+  }
+  updateVoiceWaveProgress(voice, audio);
+}
+
+function seekVoiceFromPointer(voice, audio, event) {
+  const wave = voice?.querySelector(".voice-wave");
+  if (!wave || !audio || !Number.isFinite(audio.duration) || audio.duration <= 0) return;
+  const rect = wave.getBoundingClientRect();
+  const clientX = event.clientX ?? event.touches?.[0]?.clientX;
+  if (typeof clientX !== "number") return;
+  const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+  audio.currentTime = ratio * audio.duration;
+  updateVoiceMessageTime(voice, audio);
+}
+
+function bindVoiceSeek(voice, audio) {
+  const wave = voice.querySelector(".voice-wave");
+  if (!wave || wave.dataset.boundSeek === "1") return;
+  wave.dataset.boundSeek = "1";
+  let seeking = false;
+  wave.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    seeking = true;
+    wave.setPointerCapture?.(event.pointerId);
+    seekVoiceFromPointer(voice, audio, event);
+  });
+  wave.addEventListener("pointermove", (event) => {
+    if (!seeking) return;
+    event.preventDefault();
+    seekVoiceFromPointer(voice, audio, event);
+  });
+  const finishSeek = (event) => {
+    if (!seeking) return;
+    seeking = false;
+    wave.releasePointerCapture?.(event.pointerId);
+  };
+  wave.addEventListener("pointerup", finishSeek);
+  wave.addEventListener("pointercancel", finishSeek);
 }
 
 function initializeVoiceMessages() {
   document.querySelectorAll(".voice-message").forEach((voice) => {
     const audio = voice.querySelector("audio");
-    if (!audio || audio.dataset.boundVoiceUi === "1") {
-      if (audio) updateVoiceMessageTime(voice, audio);
+    if (!audio) return;
+    bindVoiceSeek(voice, audio);
+    if (audio.dataset.boundVoiceUi === "1") {
+      updateVoiceMessageTime(voice, audio);
       return;
     }
 
@@ -712,6 +844,9 @@ function initializeVoiceMessages() {
     audio.addEventListener("loadedmetadata", () => updateVoiceMessageTime(voice, audio));
     audio.addEventListener("timeupdate", () => updateVoiceMessageTime(voice, audio));
     audio.addEventListener("durationchange", () => updateVoiceMessageTime(voice, audio));
+    audio.addEventListener("play", () => voice.classList.add("is-playing"));
+    audio.addEventListener("pause", () => voice.classList.remove("is-playing"));
+    audio.addEventListener("ended", () => voice.classList.remove("is-playing"));
     updateVoiceMessageTime(voice, audio);
   });
 }
@@ -1258,6 +1393,12 @@ function roomControlsHtml() {
       : `<span class="meta room-controls-note">${COPY.messages.hostStartsVoting}</span>`;
   }
 
+  if (currentRoom.state === "grandVoting") {
+    primaryAction = hasGrandVoted()
+      ? `<span class="meta room-controls-note">${COPY.messages.grandVoteSubmitted}</span>`
+      : `<span class="meta room-controls-note">Выберите шутку вечера.</span>`;
+  }
+
   if (currentRoom.state === "scoreboard") {
     const isFinalNext = currentRoom.round >= currentRoom.maxRounds;
     primaryAction = isHost()
@@ -1320,14 +1461,21 @@ function submittedBlockHtml({ type, text, audio }) {
   const title = type === "prompt" ? "Начало отправлено" : "Концовка отправлена";
   const emptyLabel = type === "prompt" ? "Голосовое начало" : "Голосовая концовка";
   const editAction = type === "prompt" ? "edit-prompt-draft" : "edit-answer-draft";
+  const cardClasses = ["submitted-draft-card"];
+  if (audio) cardClasses.push("has-audio");
+  if (text) cardClasses.push("has-text");
+  if (audio && !text) cardClasses.push("only-audio");
+
   return `
-    <div class="submitted-draft-card">
+    <div class="${cardClasses.join(" ")}">
       <div class="submitted-draft-top">
         <span class="submitted-draft-label">${title}</span>
         <button class="inline-edit" type="button" data-action="${editAction}">${COPY.buttons.editSubmission}</button>
       </div>
-      <div class="submitted-draft-text">${escapeHtml(text || (audio ? emptyLabel : "Пока пусто"))}</div>
-      ${audioPlayerHtml(audio)}
+      <div class="submitted-draft-content">
+        <div class="submitted-draft-text">${escapeHtml(text || (audio ? emptyLabel : "Пока пусто"))}</div>
+        ${audioPlayerHtml(audio)}
+      </div>
     </div>
   `;
 }
@@ -1586,25 +1734,197 @@ function renderScoreboard() {
   `;
 }
 
-function renderFinished() {
-  const winner = [...currentRoom.players].sort((a, b) => b.score - a.score)[0];
+
+function grandFinalCandidatesHtml({ finished = false } = {}) {
+  const candidates = currentRoom.grandFinal?.candidates || [];
+  const winners = currentRoom.grandFinal?.winners || [];
+  const winnerIds = new Set(winners.map((item) => item.jokeId));
+  if (!candidates.length) return `<p class="meta centered-meta">Финальных шуток пока нет.</p>`;
+  return `
+    <div class="jokes stage-jokes grand-jokes">
+      ${candidates.map((joke) => {
+        const isWinner = winnerIds.has(joke.jokeId);
+        const disabled = hasGrandVoted() || !canVoteGrandJoke(joke);
+        const metaParts = [
+          `Раунд ${joke.round}`,
+          `${joke.promptAuthorName || "Игра"} + ${joke.answerAuthorName || joke.authorName || "аноним"}`,
+          finished ? `${joke.finalVotes || 0} фин. голосов` : `${joke.votesCount || 0} голосов в раунде`
+        ];
+        return jokeCardHtml({
+          meta: metaParts.join(" · "),
+          promptText: joke.promptText,
+          answerText: joke.answerText,
+          promptAudio: joke.promptAudio || null,
+          answerAudio: joke.answerAudio || null,
+          winner: isWinner,
+          actions: finished ? "" : `<button class="btn primary" data-action="grand-vote" data-joke-id="${escapeHtml(joke.jokeId)}" ${disabled ? "disabled" : ""}>${disabled && !hasGrandVoted() ? "Вы участник этой шутки" : COPY.buttons.grandVote}</button>`
+        });
+      }).join("")}
+    </div>
+  `;
+}
+
+function renderGrandVoting() {
   app.classList.add("game-stage-card", "scoreboard-stage-card");
   app.innerHTML = `
-    <div class="game-stage scoreboard-stage">
-      ${stageTitle(COPY.screens.finished)}
-      <div class="prompt-box stage-message centered-meta">Победитель: ${escapeHtml(winner?.name || COPY.empty.winnerMissing)} · титул: Главный клоун лобби</div>
-      ${scoresHtml()}
-      <section class="stage-section">
-        <h3 class="section-title centered-title">${COPY.labels.titles}</h3>
+    <div class="game-stage scoreboard-stage grand-voting-stage">
+      ${stageTitle(COPY.screens.grandVoting, "финальное голосование")}
+      <div class="stage-timer-row">${timerHtml()}</div>
+      <p class="prompt-box stage-message centered-meta">Выберите лучшую шутку из победителей раундов. За свою связку голосовать нельзя, если есть другие варианты.</p>
+      ${hasGrandVoted() ? `<p class="prompt-box stage-message centered-meta">${COPY.messages.grandVoteSubmitted}</p>` : ""}
+      ${grandFinalCandidatesHtml()}
+    </div>
+  `;
+}
+
+function awardRarityLabel(rarity = "common") {
+  const labels = {
+    common: "обычный титул",
+    rare: "редкий титул",
+    epic: "эпический титул",
+    legendary: "легендарный титул"
+  };
+  return labels[rarity] || labels.common;
+}
+
+function personalAwardCardHtml(player, { compact = false } = {}) {
+  return `
+    <article class="final-award-card ${compact ? "final-award-compact" : ""}">
+      <div class="final-award-place">${player.place} место</div>
+      <h3>${escapeHtml(player.name)}</h3>
+      <p class="final-score">${player.score} ${player.score === 1 ? "очко" : "очк."}</p>
+      <div class="crafted-title ${escapeHtml(player.title?.rarity || "common")}">${escapeHtml(player.title?.title || "Участник хаоса")}</div>
+      <p class="meta">${escapeHtml(player.title?.description || "Был в игре и внёс свою часть беспорядка.")}</p>
+      ${player.statsPreview?.length ? `<div class="award-chips">${player.statsPreview.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>` : ""}
+    </article>
+  `;
+}
+
+function pairAwardCardHtml(pair) {
+  return `
+    <article class="final-award-card pair-award-card">
+      <div class="final-award-place">${pair.place} место · связка</div>
+      <h3>${pair.players.map((player) => escapeHtml(player.name)).join(" + ")}</h3>
+      <div class="crafted-title ${escapeHtml(pair.title?.rarity || "common")}">${escapeHtml(pair.title?.title || "Лучшая парочка")}</div>
+      <p class="meta">${escapeHtml(pair.title?.description || "Один закинул, второй добил — и вместе они собрали реакцию.")}</p>
+      ${pair.statsPreview?.length ? `<div class="award-chips">${pair.statsPreview.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>` : ""}
+    </article>
+  `;
+}
+
+function trioAwardCardHtml(trio) {
+  return `
+    <article class="final-award-card trio-award-card">
+      <div class="final-award-place">трио</div>
+      <h3>${trio.players.map((player) => escapeHtml(player.name)).join(" + ")}</h3>
+      <div class="crafted-title ${escapeHtml(trio.title?.rarity || "epic")}">${escapeHtml(trio.title?.title || "Трио вечера")}</div>
+      <p class="meta">${escapeHtml(trio.title?.description || trio.description || "Эта тройка заметно повлияла на игру.")}</p>
+      ${trio.statsPreview?.length ? `<div class="award-chips">${trio.statsPreview.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>` : ""}
+    </article>
+  `;
+}
+
+function renderFinalSummary() {
+  const summary = currentRoom.finalSummary;
+  if (!summary) return null;
+  const grandWinners = summary.grandFinal?.winners || [];
+  return `
+    ${grandWinners.length ? `
+      <section class="stage-section final-section">
+        <h3 class="section-title centered-title">${grandWinners.length > 1 ? "Шутки вечера" : "Шутка вечера"}</h3>
+        <div class="jokes stage-jokes">
+          ${grandWinners.map((joke) => jokeCardHtml({
+            meta: `Раунд ${joke.round} · ${joke.promptAuthorName || "Игра"} + ${joke.answerAuthorName || joke.authorName || "аноним"} · фин. голосов: ${joke.finalVotes || 0}`,
+            promptText: joke.promptText,
+            answerText: joke.answerText,
+            promptAudio: joke.promptAudio || null,
+            answerAudio: joke.answerAudio || null,
+            winner: true
+          })).join("")}
+        </div>
+      </section>
+    ` : ""}
+
+    <section class="stage-section final-section">
+      <h3 class="section-title centered-title">${COPY.labels.personalPodium}</h3>
+      <div class="final-awards-grid">
+        ${(summary.podium || []).map((player) => personalAwardCardHtml(player)).join("")}
+      </div>
+    </section>
+
+    ${(summary.pairs?.podium || []).length ? `
+      <section class="stage-section final-section">
+        <h3 class="section-title centered-title">${COPY.labels.pairAwards}</h3>
+        <div class="final-awards-grid pair-awards-grid">
+          ${summary.pairs.podium.slice(0, 3).map(pairAwardCardHtml).join("")}
+        </div>
+        ${summary.pairs.others?.length ? `
+          <details class="final-details">
+            <summary>Показать остальные связки · ${summary.pairs.others.length}</summary>
+            <div class="final-compact-list">
+              ${summary.pairs.others.map((pair) => `<div class="score-row"><span>${pair.players.map((p) => escapeHtml(p.name)).join(" + ")} · ${escapeHtml(pair.title.title)}</span><span>${pair.totalVotes} голосов</span></div>`).join("")}
+            </div>
+          </details>
+        ` : ""}
+      </section>
+    ` : ""}
+
+    ${(summary.trios || []).length ? `
+      <section class="stage-section final-section">
+        <h3 class="section-title centered-title">${COPY.labels.trioAwards}</h3>
+        <div class="final-awards-grid pair-awards-grid">
+          ${summary.trios.map(trioAwardCardHtml).join("")}
+        </div>
+      </section>
+    ` : ""}
+
+    ${(summary.otherPlayers || []).length ? `
+      <section class="stage-section final-section">
+        <h3 class="section-title centered-title">${COPY.labels.otherPlayers}</h3>
+        <div class="final-compact-list">
+          ${summary.otherPlayers.map((player) => personalAwardCardHtml(player, { compact: true })).join("")}
+        </div>
+      </section>
+    ` : ""}
+
+    ${(summary.specialRoles || []).length ? `
+      <section class="stage-section final-section">
+        <h3 class="section-title centered-title">${COPY.labels.specialRoles}</h3>
         <div class="titles">
-          ${currentRoom.titles.map((title) => `
+          ${summary.specialRoles.map((role) => `
             <div class="title-row">
-              <span>${escapeHtml(title.title)} - ${escapeHtml(title.playerName)}</span>
-              <span class="meta">${escapeHtml(title.note)}</span>
+              <span>${escapeHtml(role.title)} — ${escapeHtml(role.playerName)}</span>
+              <span class="meta">${escapeHtml(role.description)}</span>
             </div>
           `).join("")}
         </div>
       </section>
+    ` : ""}
+  `;
+}
+
+function renderFinished() {
+  const winner = [...currentRoom.players].sort((a, b) => b.score - a.score)[0];
+  const summaryHtml = renderFinalSummary();
+  app.classList.add("game-stage-card", "scoreboard-stage-card");
+  app.innerHTML = `
+    <div class="game-stage scoreboard-stage final-stage">
+      ${stageTitle(COPY.screens.finished)}
+      ${summaryHtml || `
+        <div class="prompt-box stage-message centered-meta">Победитель: ${escapeHtml(winner?.name || COPY.empty.winnerMissing)} · титул: Главный клоун лобби</div>
+        ${scoresHtml()}
+        <section class="stage-section">
+          <h3 class="section-title centered-title">${COPY.labels.titles}</h3>
+          <div class="titles">
+            ${currentRoom.titles.map((title) => `
+              <div class="title-row">
+                <span>${escapeHtml(title.title)} - ${escapeHtml(title.playerName)}</span>
+                <span class="meta">${escapeHtml(title.note)}</span>
+              </div>
+            `).join("")}
+          </div>
+        </section>
+      `}
       ${historyHtml()}
     </div>
   `;
@@ -1623,7 +1943,7 @@ function render() {
   );
   document.body.classList.toggle("waiting-screen", Boolean(currentRoom && currentRoom.state === "waiting"));
   document.body.classList.toggle("stage-screen", Boolean(currentRoom && ["starting", "prompting", "answering", "revealing", "voting"].includes(currentRoom.state)));
-  document.body.classList.toggle("scoreboard-screen", Boolean(currentRoom && ["scoreboard", "finished"].includes(currentRoom.state)));
+  document.body.classList.toggle("scoreboard-screen", Boolean(currentRoom && ["scoreboard", "grandVoting", "finished"].includes(currentRoom.state)));
   document.body.classList.toggle("has-room-controls", Boolean(currentRoom));
   if (!currentRoom) {
     if (currentScreen === "create") renderCreateRoom();
@@ -1654,6 +1974,7 @@ function render() {
   if (state === "revealing") renderRevealing();
   if (state === "voting") renderVoting();
   if (state === "scoreboard") renderScoreboard();
+  if (state === "grandVoting") renderGrandVoting();
   if (state === "finished") renderFinished();
   renderRoomControlsRoot();
   startTimerView();
@@ -1710,15 +2031,47 @@ document.addEventListener("change", async (event) => {
   if (!file) return;
 
   try {
-    const payload = await fileToAudioPayload(file);
-    setAudioDraft(type, payload);
-    showToast(COPY.messages.audioReady);
-    render();
-  } catch (error) {
-    showToast(error.message === "audio-too-large" ? COPY.messages.audioTooLarge : COPY.messages.audioUnsupported);
+    await applyAudioFile(type, file);
   } finally {
     input.value = "";
   }
+});
+
+
+function audioDropZoneFromEvent(event) {
+  return event.target?.closest?.("[data-audio-drop]");
+}
+
+function hasDraggedFiles(event) {
+  return Array.from(event.dataTransfer?.types || []).includes("Files");
+}
+
+document.addEventListener("dragover", (event) => {
+  if (!hasDraggedFiles(event)) return;
+  event.preventDefault();
+  const zone = audioDropZoneFromEvent(event);
+  document.querySelectorAll(".audio-tools.is-dragover").forEach((item) => {
+    if (item !== zone) item.classList.remove("is-dragover");
+  });
+  if (zone) zone.classList.add("is-dragover");
+});
+
+document.addEventListener("dragleave", (event) => {
+  const zone = audioDropZoneFromEvent(event);
+  if (!zone || zone.contains(event.relatedTarget)) return;
+  zone.classList.remove("is-dragover");
+});
+
+document.addEventListener("drop", async (event) => {
+  if (!hasDraggedFiles(event)) return;
+  event.preventDefault();
+  const zone = audioDropZoneFromEvent(event);
+  document.querySelectorAll(".audio-tools.is-dragover").forEach((item) => item.classList.remove("is-dragover"));
+  if (!zone) return;
+  const type = zone.dataset.audioDrop;
+  const file = Array.from(event.dataTransfer?.files || []).find(isAllowedAudioFile) || event.dataTransfer?.files?.[0];
+  if (!file) return showToast(COPY.messages.audioUnsupported);
+  await applyAudioFile(type, file);
 });
 
 document.addEventListener("click", (event) => {
@@ -1752,6 +2105,7 @@ document.addEventListener("click", (event) => {
     "remove-audio-answer",
 
     "vote",
+    "grand-vote",
     "leave-room",
     "delete-room"
   ];
@@ -1951,6 +2305,11 @@ document.addEventListener("click", (event) => {
   if (action === "vote") {
     playSound("vote");
     socket.emit("submitVote", { answerId: button.dataset.answerId });
+  }
+
+  if (action === "grand-vote") {
+    playSound("vote");
+    socket.emit("submitGrandVote", { jokeId: button.dataset.jokeId });
   }
 
   if (action === "copy-joke") {

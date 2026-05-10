@@ -93,7 +93,8 @@ const COPY = {
     audioUnsupported: "Неподдерживаемый аудиофайл.",
     noAssignment: "Вам еще не выдана фраза. Попробуйте обновить страницу.",
     jokeMissing: "Шутка не найдена.",
-    selfVote: "За себя голосовать нельзя. Даже если ты гений."
+    selfVote: "За себя голосовать нельзя. Даже если ты гений.",
+    grandSelfVote: "За свою финальную шутку голосовать нельзя. Даже если это шутка вечера."
   },
   fallbackAnswer: "не успел придумать смешную концовку",
   fallbackPlayer: "аноним из оперативки",
@@ -187,14 +188,212 @@ function cleanAudio(raw) {
   if (!allowedByType && !allowedByName) return { error: COPY.errors.audioUnsupported };
   if (bytes > AUDIO_MAX_BYTES) return { error: COPY.errors.audioTooLarge };
 
+  const rawSource = String(raw.source || "").toLowerCase();
+  const inferredSource = rawSource === "recorded" || rawSource === "uploaded"
+    ? rawSource
+    : (/^voice-/.test(name) ? "recorded" : "uploaded");
+  const durationMs = Math.max(0, Math.min(60 * 60 * 1000, Number(raw.durationMs) || 0));
+
   return {
     audio: {
+      id: cleanText(raw.id, 80) || makeId("audio"),
       name,
       type: ALLOWED_AUDIO_TYPES.has(type) || type.startsWith("audio/") ? type : dataType,
       size: bytes,
+      durationMs,
+      source: inferredSource,
       dataUrl
     }
   };
+}
+
+
+function safeArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function getStageElapsedMs(room) {
+  if (!room?.stageStartedAt) return 0;
+  return Math.max(0, Date.now() - room.stageStartedAt);
+}
+
+function setRoomStage(room, state) {
+  room.state = state;
+  room.stageStartedAt = Date.now();
+}
+
+function logEvent(room, type, playerId = null, payload = {}) {
+  if (!room) return null;
+  if (!Array.isArray(room.events)) room.events = [];
+  const event = {
+    id: makeId("event"),
+    type,
+    playerId,
+    round: room.round,
+    state: room.state,
+    createdAt: Date.now(),
+    elapsedMs: getStageElapsedMs(room),
+    payload
+  };
+  room.events.push(event);
+  if (room.events.length > 2000) room.events.splice(0, room.events.length - 2000);
+  return event;
+}
+
+function getPlayer(room, playerId) {
+  return room?.players.find((player) => player.id === playerId) || null;
+}
+
+function incrementPlayerStat(room, playerId, key, amount = 1) {
+  const player = getPlayer(room, playerId);
+  if (!player) return;
+  if (!player.stats) player.stats = {};
+  player.stats[key] = (Number(player.stats[key]) || 0) + amount;
+}
+
+function textEditDistance(a = "", b = "") {
+  const left = String(a || "");
+  const right = String(b || "");
+  const m = left.length;
+  const n = right.length;
+  if (!m) return n;
+  if (!n) return m;
+  const prev = Array.from({ length: n + 1 }, (_, index) => index);
+  const curr = Array(n + 1).fill(0);
+  for (let i = 1; i <= m; i += 1) {
+    curr[0] = i;
+    for (let j = 1; j <= n; j += 1) {
+      const cost = left[i - 1] === right[j - 1] ? 0 : 1;
+      curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost);
+    }
+    for (let j = 0; j <= n; j += 1) prev[j] = curr[j];
+  }
+  return prev[n];
+}
+
+function classifyTextChange(previousText = "", nextText = "") {
+  const before = String(previousText || "");
+  const after = String(nextText || "");
+  const distance = textEditDistance(before, after);
+  const base = Math.max(before.length, after.length, 1);
+  const changeRatio = distance / base;
+  let type = "initial";
+  if (before) {
+    if (changeRatio < 0.15) type = "minor_edit";
+    else if (changeRatio < 0.45) type = "edit";
+    else if (changeRatio < 0.75) type = "rewrite";
+    else type = "full_rewrite";
+  }
+  return {
+    type,
+    editDistance: distance,
+    changeRatio,
+    beforeLength: before.length,
+    afterLength: after.length,
+    lengthDelta: after.length - before.length
+  };
+}
+
+function audioSignature(audio) {
+  if (!audio) return "none";
+  return `${audio.name || "audio"}:${audio.size || 0}:${audio.type || ""}:${audio.durationMs || 0}`;
+}
+
+function classifyAudioChange(previousAudio, nextAudio) {
+  if (!previousAudio && !nextAudio) return { action: "none", durationDelta: 0, sourceChanged: false };
+  if (!previousAudio && nextAudio) return { action: "added", durationDelta: Number(nextAudio.durationMs) || 0, sourceChanged: false };
+  if (previousAudio && !nextAudio) return { action: "removed", durationDelta: -(Number(previousAudio.durationMs) || 0), sourceChanged: false };
+  const sourceChanged = previousAudio.source !== nextAudio.source;
+  const durationDelta = (Number(nextAudio.durationMs) || 0) - (Number(previousAudio.durationMs) || 0);
+  const same = audioSignature(previousAudio) === audioSignature(nextAudio);
+  if (same) return { action: "none", durationDelta: 0, sourceChanged: false };
+  if (previousAudio.source === "recorded" && nextAudio.source === "recorded") return { action: "rerecorded", durationDelta, sourceChanged };
+  return { action: "replaced", durationDelta, sourceChanged };
+}
+
+function makeSubmissionVersion({ room, item, text, audio, source = "manual" }) {
+  const previous = item ? safeArray(item.versions).at(-1) : null;
+  const previousText = previous?.text ?? item?.text ?? "";
+  const previousAudio = previous?.audio ?? item?.audio ?? null;
+  const textChange = classifyTextChange(previousText, text);
+  const audioChange = classifyAudioChange(previousAudio, audio);
+  return {
+    version: previous ? previous.version + 1 : 1,
+    text,
+    textLength: String(text || "").length,
+    audio: audio || null,
+    audioMeta: audio ? {
+      id: audio.id,
+      name: audio.name,
+      type: audio.type,
+      size: audio.size,
+      durationMs: audio.durationMs || 0,
+      source: audio.source || "uploaded"
+    } : null,
+    source: audio?.source || source,
+    createdAt: Date.now(),
+    elapsedMs: getStageElapsedMs(room),
+    change: {
+      ...textChange,
+      audioAction: audioChange.action,
+      audioDurationDelta: audioChange.durationDelta,
+      audioSourceChanged: audioChange.sourceChanged
+    }
+  };
+}
+
+function applySubmissionStats(room, playerId, version, kind, isUpdate) {
+  if (kind === "prompt") incrementPlayerStat(room, playerId, isUpdate ? "promptUpdates" : "promptsSubmitted");
+  if (kind === "answer") incrementPlayerStat(room, playerId, isUpdate ? "answerUpdates" : "answersSubmitted");
+  if (isUpdate) incrementPlayerStat(room, playerId, "textEdits");
+  if (version.change.type === "minor_edit") incrementPlayerStat(room, playerId, "minorEdits");
+  if (["rewrite", "full_rewrite"].includes(version.change.type)) incrementPlayerStat(room, playerId, "majorRewrites");
+  if (version.audioMeta?.source === "recorded") incrementPlayerStat(room, playerId, "audioRecorded");
+  if (version.audioMeta?.source === "uploaded") incrementPlayerStat(room, playerId, "audioUploaded");
+  const audioAction = version.change.audioAction;
+  if (audioAction === "added") incrementPlayerStat(room, playerId, "audioAdded");
+  if (audioAction === "removed") incrementPlayerStat(room, playerId, "audioRemoved");
+  if (audioAction === "replaced") incrementPlayerStat(room, playerId, "audioReplaced");
+  if (audioAction === "rerecorded") incrementPlayerStat(room, playerId, "audioRerecorded");
+}
+
+function snapshotSubmission(item) {
+  return {
+    id: item.id,
+    authorId: item.authorId,
+    text: item.text || "",
+    audio: item.audio || null,
+    versions: safeArray(item.versions).map((version) => ({
+      version: version.version,
+      textLength: version.textLength,
+      source: version.source,
+      elapsedMs: version.elapsedMs,
+      change: version.change,
+      audioMeta: version.audioMeta
+    }))
+  };
+}
+
+function denseRank(items, valueGetter) {
+  let lastValue = null;
+  let place = 0;
+  return [...items].sort((a, b) => valueGetter(b) - valueGetter(a)).map((item) => {
+    const value = valueGetter(item);
+    if (lastValue === null || value !== lastValue) {
+      place += 1;
+      lastValue = value;
+    }
+    return { ...item, place };
+  });
+}
+
+function formatScoreWord(score) {
+  const value = Math.abs(Number(score) || 0) % 100;
+  const last = value % 10;
+  if (value >= 11 && value <= 14) return "очков";
+  if (last === 1) return "очко";
+  if (last >= 2 && last <= 4) return "очка";
+  return "очков";
 }
 
 function cleanSessionId(value) {
@@ -275,12 +474,32 @@ function createPlayer(socket, name, sessionId) {
     score: 0,
     connected: true,
     totalVotesReceived: 0,
-    bestSingleRoundVotes: 0
+    bestSingleRoundVotes: 0,
+    stats: {
+      promptsSubmitted: 0,
+      answersSubmitted: 0,
+      votesGiven: 0,
+      missedPrompts: 0,
+      missedAnswers: 0,
+      missedVotes: 0,
+      disconnects: 0,
+      leaves: 0,
+      reconnects: 0,
+      textEdits: 0,
+      majorRewrites: 0,
+      minorEdits: 0,
+      audioAdded: 0,
+      audioRemoved: 0,
+      audioReplaced: 0,
+      audioRerecorded: 0,
+      audioUploaded: 0,
+      audioRecorded: 0
+    }
   };
 }
 
 function publicRoom(room) {
-  const { timerHandle, emptyDeleteTimer, ...safeRoom } = room;
+  const { timerHandle, emptyDeleteTimer, events, jokeArchive, ...safeRoom } = room;
   return {
     ...safeRoom,
     serverNow: Date.now(),
@@ -432,6 +651,8 @@ function leaveRoom(socket, notifySelf = true) {
   const newHost = assignNewHostIfNeeded(room, playerId);
 
   if (notifySelf) {
+    incrementPlayerStat(room, playerId, "leaves");
+    logEvent(room, "leave", playerId, {});
     socket.emit("leftRoom");
   }
 
@@ -470,26 +691,26 @@ function startRound(room) {
 
   if (room.settings.promptMode === "auto") {
     buildAssignments(room);
-    room.state = "answering";
+    setRoomStage(room, "answering");
     setStageTimer(room, room.timers.answerSeconds, () => expireAnswering(room.code));
     emitRoom(room);
     return;
   }
 
-  room.state = "prompting";
+  setRoomStage(room, "prompting");
   setStageTimer(room, room.timers.promptSeconds, () => expirePrompting(room.code));
   emitRoom(room);
 }
 
 function startGameCountdown(room) {
   clearRoomTimer(room);
-  room.state = "starting";
-  room.timerEndsAt = Date.now() + 5000;
+  setRoomStage(room, "starting");
+  room.timerEndsAt = Date.now() + 5200;
   room.timerHandle = setTimeout(() => {
     const latest = rooms[room.code];
     if (!latest || latest.state !== "starting") return;
     startRound(latest);
-  }, 5000);
+  }, 5200);
   emitRoom(room);
 }
 
@@ -505,9 +726,11 @@ function buildAssignments(room) {
     } else {
       prompt = {
         id: makeId("prompt"),
+        round: room.round,
         authorId: null,
         text: pickAutoPrompt(room.round + Date.now()),
-        audio: null
+        audio: null,
+        versions: []
       };
       room.prompts.push(prompt);
     }
@@ -523,9 +746,11 @@ function buildAssignments(room) {
     players.forEach((player, index) => {
       const prompt = {
         id: makeId("prompt"),
+        round: room.round,
         authorId: null,
         text: pickAutoPrompt(room.round + index),
-        audio: null
+        audio: null,
+        versions: []
       };
       room.prompts.push(prompt);
       room.assignments[player.id] = prompt.id;
@@ -545,11 +770,26 @@ function fillMissingPrompts(room) {
   const submitted = new Set(room.prompts.map((prompt) => prompt.authorId));
   getConnectedPlayers(room).forEach((player, index) => {
     if (!submitted.has(player.id)) {
+      const fallbackText = pickAutoPrompt(room.round + index);
+      incrementPlayerStat(room, player.id, "missedPrompts");
+      logEvent(room, "miss_prompt", player.id, { fallbackText });
       room.prompts.push({
         id: makeId("prompt"),
+        round: room.round,
         authorId: player.id,
-        text: pickAutoPrompt(room.round + index),
-        audio: null
+        text: fallbackText,
+        audio: null,
+        versions: [{
+          version: 1,
+          text: fallbackText,
+          textLength: fallbackText.length,
+          audio: null,
+          audioMeta: null,
+          source: "auto",
+          createdAt: Date.now(),
+          elapsedMs: getStageElapsedMs(room),
+          change: { type: "auto_fallback", editDistance: 0, changeRatio: 0, beforeLength: 0, afterLength: fallbackText.length, lengthDelta: fallbackText.length, audioAction: "none", audioDurationDelta: 0, audioSourceChanged: false }
+        }]
       });
     }
   });
@@ -559,7 +799,7 @@ function moveToAnswering(room) {
   clearRoomTimer(room);
   fillMissingPrompts(room);
   buildAssignments(room);
-  room.state = "answering";
+  setRoomStage(room, "answering");
   setStageTimer(room, room.timers.answerSeconds, () => expireAnswering(room.code));
   emitRoom(room);
 }
@@ -574,12 +814,26 @@ function fillMissingAnswers(room) {
   const answered = new Set(room.answers.map((answer) => answer.authorId));
   getConnectedPlayers(room).forEach((player) => {
     if (!answered.has(player.id) && room.assignments[player.id]) {
+      incrementPlayerStat(room, player.id, "missedAnswers");
+      logEvent(room, "miss_answer", player.id, { promptId: room.assignments[player.id] });
       room.answers.push({
         id: makeId("answer"),
+        round: room.round,
         promptId: room.assignments[player.id],
         authorId: player.id,
         text: COPY.fallbackAnswer,
-        audio: null
+        audio: null,
+        versions: [{
+          version: 1,
+          text: COPY.fallbackAnswer,
+          textLength: COPY.fallbackAnswer.length,
+          audio: null,
+          audioMeta: null,
+          source: "auto",
+          createdAt: Date.now(),
+          elapsedMs: getStageElapsedMs(room),
+          change: { type: "auto_fallback", editDistance: 0, changeRatio: 0, beforeLength: 0, afterLength: COPY.fallbackAnswer.length, lengthDelta: COPY.fallbackAnswer.length, audioAction: "none", audioDurationDelta: 0, audioSourceChanged: false }
+        }]
       });
     }
   });
@@ -588,7 +842,7 @@ function fillMissingAnswers(room) {
 function moveToRevealing(room) {
   clearRoomTimer(room);
   fillMissingAnswers(room);
-  room.state = "revealing";
+  setRoomStage(room, "revealing");
   room.timerEndsAt = null;
   emitRoom(room);
 }
@@ -600,7 +854,7 @@ function expireAnswering(code) {
 }
 
 function moveToVoting(room) {
-  room.state = "voting";
+  setRoomStage(room, "voting");
   room.votes = [];
   setStageTimer(room, room.timers.voteSeconds, () => expireVoting(room.code));
   emitRoom(room);
@@ -630,6 +884,15 @@ function getPlayerName(room, playerId) {
 function finishVoting(room) {
   clearRoomTimer(room);
 
+  const voters = new Set(room.votes.map((vote) => vote.voterId));
+  getConnectedPlayers(room).forEach((player) => {
+    const ownOnly = room.answers.every((answerItem) => answerItem.authorId === player.id);
+    if (!ownOnly && !voters.has(player.id)) {
+      incrementPlayerStat(room, player.id, "missedVotes");
+      logEvent(room, "miss_vote", player.id, {});
+    }
+  });
+
   const votesByAnswer = new Map();
   room.answers.forEach((answer) => votesByAnswer.set(answer.id, 0));
   room.votes.forEach((vote) => {
@@ -639,6 +902,7 @@ function finishVoting(room) {
   room.lastRoundResults = room.answers.map((answer) => {
     const votesCount = votesByAnswer.get(answer.id) || 0;
     const author = room.players.find((player) => player.id === answer.authorId);
+    const prompt = room.prompts.find((item) => item.id === answer.promptId);
 
     if (author) {
       author.score += votesCount;
@@ -647,14 +911,24 @@ function finishVoting(room) {
     }
 
     return {
+      jokeId: answer.id,
       answerId: answer.id,
+      promptId: answer.promptId,
+      round: room.round,
       promptText: getPromptText(room, answer.promptId),
       answerText: answer.text,
       promptAudio: getPromptAudio(room, answer.promptId),
       answerAudio: answer.audio || null,
+      promptAuthorId: prompt?.authorId || null,
+      promptAuthorName: prompt?.authorId ? getPlayerName(room, prompt.authorId) : "Игра",
+      answerAuthorId: answer.authorId,
+      answerAuthorName: getPlayerName(room, answer.authorId),
       authorId: answer.authorId,
       authorName: getPlayerName(room, answer.authorId),
       votesCount,
+      voters: room.votes.filter((vote) => vote.answerId === answer.id).map((vote) => vote.voterId),
+      promptSnapshot: prompt ? snapshotSubmission(prompt) : null,
+      answerSnapshot: snapshotSubmission(answer),
       isRoundWinner: false
     };
   }).sort((a, b) => b.votesCount - a.votesCount);
@@ -675,71 +949,446 @@ function finishVoting(room) {
 
   bestJokes.forEach((best) => {
     room.bestJokesHistory.push({
+      jokeId: best.jokeId,
+      answerId: best.answerId,
+      promptId: best.promptId,
       round: room.round,
       promptText: best.promptText,
       answerText: best.answerText,
       promptAudio: best.promptAudio || null,
       answerAudio: best.answerAudio || null,
+      promptAuthorId: best.promptAuthorId,
+      promptAuthorName: best.promptAuthorName,
+      answerAuthorId: best.answerAuthorId,
+      answerAuthorName: best.answerAuthorName,
       authorName: best.authorName,
       votesCount: best.votesCount,
       tied: bestJokes.length > 1
     });
   });
 
-  room.state = "scoreboard";
+  if (!Array.isArray(room.jokeArchive)) room.jokeArchive = [];
+  room.jokeArchive.push(...room.lastRoundResults.map((result) => ({ ...result })));
+
+  setRoomStage(room, "scoreboard");
   room.timerEndsAt = null;
   emitRoom(room);
 }
 
-function buildTitles(room) {
-  const players = [...room.players].sort((a, b) => b.score - a.score);
-  if (players.length === 0) return [];
+function titleObject(id, title, tag, description, rarity = "common") {
+  return { id, title, tag, description, rarity };
+}
 
-  const winner = players[0];
-  const leastVotes = [...room.players].sort((a, b) => a.totalVotesReceived - b.totalVotesReceived)[0];
-  const bestSingle = [...room.players].sort((a, b) => b.bestSingleRoundVotes - a.bestSingleRoundVotes)[0];
-  const second = players[1] || winner;
-  const smallLead = players[1] && winner.score - players[1].score <= 1;
-  const extraPlayers = [...room.players].sort((a, b) => {
-    if (a.id === winner.id) return 1;
-    if (b.id === winner.id) return -1;
-    return a.name.localeCompare(b.name, "ru");
+const PERSONAL_FALLBACK_TITLES = [
+  titleObject("chaos_participant", "Участник хаоса", "chaos", "Был в игре и внёс свою часть беспорядка."),
+  titleObject("mood_player", "Игрок настроения", "stable", "Поддерживал темп и не дал лобби развалиться."),
+  titleObject("joke_witness", "Свидетель шуток", "judge", "Видел всё, что здесь происходило, и теперь с этим живёт.")
+];
+
+function buildPlayerStats(room) {
+  const archived = safeArray(room.jokeArchive);
+  const events = safeArray(room.events);
+  return room.players.map((player) => {
+    const answers = archived.filter((joke) => joke.answerAuthorId === player.id);
+    const prompts = archived.filter((joke) => joke.promptAuthorId === player.id);
+    const votesGiven = events.filter((event) => ["vote_round", "vote_grand"].includes(event.type) && event.playerId === player.id);
+    const edits = events.filter((event) => ["update_prompt", "update_answer"].includes(event.type) && event.playerId === player.id);
+    const audioEvents = events.filter((event) => ["submit_prompt", "update_prompt", "submit_answer", "update_answer"].includes(event.type) && event.playerId === player.id && event.payload?.audio);
+    const missedPrompts = events.filter((event) => event.type === "miss_prompt" && event.playerId === player.id).length;
+    const missedAnswers = events.filter((event) => event.type === "miss_answer" && event.playerId === player.id).length;
+    const missedVotes = events.filter((event) => event.type === "miss_vote" && event.playerId === player.id).length;
+    const recordedAudioCount = audioEvents.filter((event) => event.payload.audio?.source === "recorded").length;
+    const uploadedAudioCount = audioEvents.filter((event) => event.payload.audio?.source === "uploaded").length;
+    const majorRewrites = edits.filter((event) => ["rewrite", "full_rewrite"].includes(event.payload?.change?.type)).length;
+    const minorEdits = edits.filter((event) => event.payload?.change?.type === "minor_edit").length;
+    const audioRerecords = edits.filter((event) => event.payload?.change?.audioAction === "rerecorded").length;
+    const audioRemoved = edits.filter((event) => event.payload?.change?.audioAction === "removed").length;
+    const textLengths = answers.map((joke) => String(joke.answerText || "").length);
+    const averageAnswerLength = textLengths.length ? textLengths.reduce((a, b) => a + b, 0) / textLengths.length : 0;
+    const roundsWithVotes = new Set(answers.filter((joke) => joke.votesCount > 0).map((joke) => joke.round)).size;
+    const zeroVoteAnswers = answers.filter((joke) => joke.votesCount === 0).length;
+    const roundWins = answers.filter((joke) => joke.isRoundWinner).length;
+    const grandWins = safeArray(room.grandFinal?.winners).filter((joke) => joke.answerAuthorId === player.id || joke.promptAuthorId === player.id).length;
+    const finalVotesForOwnJokes = safeArray(room.grandFinal?.votes).filter((vote) => {
+      const joke = safeArray(room.grandFinal?.candidates).find((item) => item.jokeId === vote.jokeId);
+      return joke && (joke.answerAuthorId === player.id || joke.promptAuthorId === player.id);
+    }).length;
+    const votesForWinners = safeArray(room.grandFinal?.votes).filter((vote) => vote.voterId === player.id && safeArray(room.grandFinal?.winners).some((winner) => winner.jokeId === vote.jokeId)).length;
+
+    return {
+      id: player.id,
+      name: player.name,
+      score: player.score,
+      connected: player.connected,
+      totalVotesReceived: player.totalVotesReceived,
+      bestSingleRoundVotes: player.bestSingleRoundVotes,
+      answersSubmitted: answers.length,
+      promptsThatLedToVotes: prompts.filter((joke) => joke.votesCount > 0).length,
+      promptsThatLedToWinningAnswers: prompts.filter((joke) => joke.isRoundWinner).length,
+      votesGiven: votesGiven.length,
+      recordedAudioCount,
+      uploadedAudioCount,
+      audioCount: recordedAudioCount + uploadedAudioCount,
+      audioRerecords,
+      audioRemoved,
+      editsCount: edits.length,
+      majorRewrites,
+      minorEdits,
+      averageAnswerLength,
+      roundsWithVotes,
+      zeroVoteAnswers,
+      roundWins,
+      grandWins,
+      finalVotesForOwnJokes,
+      votesForWinners,
+      missedPrompts,
+      missedAnswers,
+      missedVotes,
+      disconnects: events.filter((event) => event.type === "disconnect" && event.playerId === player.id).length,
+      left: events.some((event) => event.type === "leave" && event.playerId === player.id)
+    };
   });
-  const playerForExtra = (index) => extraPlayers[index % extraPlayers.length] || winner;
+}
 
-  return [
-    {
-      title: COPY.titles[0].title,
-      playerName: winner.name,
-      note: COPY.titles[0].note
+function selectPersonalTitle(stat, allStats, place, topScore) {
+  const maxScore = Math.max(...allStats.map((item) => item.score), 0);
+  const maxVotes = Math.max(...allStats.map((item) => item.totalVotesReceived), 0);
+  const maxRecorded = Math.max(...allStats.map((item) => item.recordedAudioCount), 0);
+  const maxUploaded = Math.max(...allStats.map((item) => item.uploadedAudioCount), 0);
+  const maxEdits = Math.max(...allStats.map((item) => item.editsCount), 0);
+  const maxMissed = Math.max(...allStats.map((item) => item.missedPrompts + item.missedAnswers + item.missedVotes), 0);
+  const missed = stat.missedPrompts + stat.missedAnswers + stat.missedVotes;
+  const candidates = [];
+  const add = (score, title) => candidates.push({ score, title });
+
+  if (stat.grandWins > 0) add(125, titleObject("joke_of_the_night", "Шутка вечера", "winner", "Стал соавтором шутки, которую выбрали уже после всех раундов.", "legendary"));
+  if (place === 1 && stat.score === topScore && allStats.filter((item) => item.score === topScore).length > 1) add(112, titleObject("shared_crown", "Двойная корона", "winner", "Разделил первое место — комната не смогла выбрать одного главного.", "legendary"));
+  if (place === 1 && stat.score === maxScore) add(105, titleObject("punchline_king", "Король панчлайна", "winner", "Чаще всех забирал голоса и стабильно попадал в настроение комнаты.", "legendary"));
+  if (stat.editsCount >= 2 && stat.roundWins > 0) add(97, titleObject("editor_of_victory", "Редактор победы", "editor", "Правил шутки перед отправкой — и финальная версия забрала голоса.", "epic"));
+  if (stat.majorRewrites >= 1 && (stat.roundWins > 0 || stat.grandWins > 0)) add(96, titleObject("rewrote_fate", "Переписал судьбу", "rewriter", "Сильно переделал шутку, и именно новая версия сработала.", "epic"));
+  if (stat.recordedAudioCount >= 2 && stat.recordedAudioCount === maxRecorded) add(92, titleObject("voice_of_night", "Голос вечера", "voice", "Чаще других записывал голосовые прямо в игре.", "epic"));
+  if (stat.uploadedAudioCount >= 2 && stat.uploadedAudioCount === maxUploaded && stat.uploadedAudioCount >= stat.recordedAudioCount) add(90, titleObject("file_dj", "Файловый диджей", "uploader", "Не записывал с микрофона — приносил готовые звуки как вложения.", "epic"));
+  if (stat.audioRerecords >= 2) add(89, titleObject("rerecorded_reality", "Перезаписал реальность", "voice", "Перезаписывал голосовые, пока не нашёл нужную подачу.", "rare"));
+  if (stat.audioRemoved >= 2) add(82, titleObject("changed_mind_sound", "Передумал звучать", "editor", "Добавлял аудио, потом убирал и возвращался к тексту.", "rare"));
+  if (stat.totalVotesReceived === maxVotes && maxVotes > 0) add(86, titleObject("humor_machine", "Машина юмора", "stable", "Набрал больше всего реакции за игру.", "epic"));
+  if (stat.answersSubmitted >= 2 && stat.roundsWithVotes >= Math.ceil(stat.answersSubmitted * 0.6)) add(78, titleObject("stable_funny", "Стабильный смешной", "stable", "Не всегда забирал раунд, но почти всегда собирал реакцию.", "rare"));
+  if (stat.averageAnswerLength <= 35 && stat.totalVotesReceived > 0) add(72, titleObject("short_master", "Мастер короткой фразы", "short", "Сказал мало, но этого хватило.", "rare"));
+  if (stat.averageAnswerLength >= 95) add(68, titleObject("long_author", "Автор простыней", "long", "Не жалел символов и превращал концовки в мини-истории.", "rare"));
+  if (stat.promptsThatLedToWinningAnswers > 0) add(84, titleObject("joke_architect", "Архитектор шуток", "creator", "Кидал такие начала, из которых другим было легко делать смешно.", "epic"));
+  if (stat.votesForWinners > 0 && stat.votesGiven > 0 && stat.votesForWinners / stat.votesGiven >= 0.6) add(70, titleObject("people_vote", "Голос народа", "people_vote", "Часто выбирал то, что потом выбирала вся комната.", "rare"));
+  if (stat.answersSubmitted === 0 && stat.votesGiven > 0) add(76, titleObject("judge_without_pen", "Судья без пера", "judge", "Сам почти не писал, зато внимательно выбирал чужие шутки.", "rare"));
+  if (stat.answersSubmitted > 0 && stat.votesGiven === 0) add(74, titleObject("author_without_court", "Автор без суда", "judge", "Шутки писал, но чужие оценивать не спешил.", "rare"));
+  if (missed >= 4 || (missed === maxMissed && missed >= 2)) add(88, titleObject("loading_screen", "Человек-загрузка", "afk", "Периодически появлялся, но игра всё равно ждала его ответа.", "rare"));
+  if (stat.answersSubmitted === 0 && stat.votesGiven === 0 && missed >= 2) add(100, titleObject("lobby_ghost", "Призрак лобби", "afk", "В списке игроков был. В игре — вопрос спорный.", "epic"));
+  if (stat.audioCount === 0 && stat.answersSubmitted > 0) add(52, titleObject("dry_text", "Сухой текст", "short", "Ни разу не использовал аудио, но держался текстом.", "common"));
+  if (stat.editsCount === 0 && stat.totalVotesReceived > 0) add(58, titleObject("one_take", "Один дубль", "stable", "Отправлял без правок — и всё равно попадал.", "rare"));
+  if (stat.editsCount === maxEdits && maxEdits >= 2) add(66, titleObject("panic_editor", "Редактор в панике", "editor", "Правил часто и заметно, будто шутка собиралась прямо на лету.", "rare"));
+
+  if (!candidates.length) {
+    const index = Math.abs(stat.name.length + stat.score) % PERSONAL_FALLBACK_TITLES.length;
+    return PERSONAL_FALLBACK_TITLES[index];
+  }
+  candidates.sort((a, b) => b.score - a.score);
+  return candidates[0].title;
+}
+
+function buildPlayerAwards(room) {
+  const stats = buildPlayerStats(room);
+  const ranked = denseRank(stats, (item) => item.score);
+  const topScore = Math.max(...ranked.map((item) => item.score), 0);
+  return ranked.map((stat) => {
+    const title = selectPersonalTitle(stat, ranked, stat.place, topScore);
+    return {
+      ...stat,
+      title,
+      statsPreview: [
+        `${stat.score} ${formatScoreWord(stat.score)}`,
+        stat.totalVotesReceived ? `${stat.totalVotesReceived} голосов получил` : "голоса не собрал",
+        stat.editsCount ? `${stat.editsCount} правок` : "без правок",
+        stat.audioCount ? `${stat.audioCount} аудио` : "только текст"
+      ]
+    };
+  });
+}
+
+function pairKey(a, b) {
+  return [a, b].sort().join("::");
+}
+
+function makePairRecipeKey(tagA, tagB) {
+  return [tagA || "stable", tagB || "stable"].sort().join("+");
+}
+
+const PAIR_RECIPES = {
+  "winner+winner": ["Два трона — один панчлайн", "Оба привыкли забирать внимание, и в этой связке никто не был слабым звеном.", "legendary"],
+  "voice+winner": ["Голос короны", "Победный юмор получил ещё и подачу.", "legendary"],
+  "uploader+voice": ["Файл и микрофон", "Один приносил звук файлом, другой держал подачу.", "epic"],
+  "editor+winner": ["Отредактированная корона", "Победный стиль встретился с человеком последней версии.", "epic"],
+  "rewriter+winner": ["Корона второй версии", "Один тащил, другой переписывал реальность до смешного.", "epic"],
+  "editor+editor": ["Редакционный дуэт", "Они не просто делали шутки — они доводили их до финальной версии.", "epic"],
+  "rewriter+rewriter": ["Пара второй версии", "С первого раза не остановились — и, кажется, правильно сделали.", "epic"],
+  "niche+winner": ["Король андеграунда", "Победный юмор смешался со странным вкусом — и это сработало.", "legendary"],
+  "fast+slow": ["Контрастный тайминг", "Один стрелял быстро, второй думал дольше. Вместе они нашли рабочий ритм.", "rare"],
+  "long+short": ["Разгон и удар", "Один строил заход, второй ставил точку.", "rare"],
+  "long+long": ["Сценаристы лобби", "Они не писали шутки — они строили целые истории.", "rare"],
+  "short+short": ["Две точки", "Минимум текста, максимум попытки попасть сразу в смешное.", "rare"],
+  "niche+niche": ["Андеграундный союз", "Их юмор был не для всех. Но, кажется, им это даже помогало.", "epic"],
+  "chaos+chaos": ["Двойной хаос", "Эта связка не объясняла шутки. Она просто выпускала их в комнату.", "rare"],
+  "afk+winner": ["Чемпион и тень", "Один тащил, второй появлялся как редкий бонусный персонаж.", "rare"],
+  "afk+afk": ["Дуэт ожидания", "Эту связку чаще ждали, чем слышали. Но технически она существовала.", "rare"],
+  "judge+niche": ["Критик андеграунда", "Эта связка будто сама выбирала, что считать смешным.", "rare"],
+  "judge+winner": ["Судья и чемпион", "Один хорошо чувствовал чужие шутки, второй умел делать свои.", "rare"]
+};
+
+function buildPairStats(room) {
+  const map = new Map();
+  safeArray(room.jokeArchive).forEach((joke) => {
+    if (!joke.promptAuthorId || !joke.answerAuthorId || joke.promptAuthorId === joke.answerAuthorId) return;
+    const key = pairKey(joke.promptAuthorId, joke.answerAuthorId);
+    if (!map.has(key)) {
+      map.set(key, {
+        key,
+        playerIds: key.split("::"),
+        totalJokes: 0,
+        totalVotes: 0,
+        roundWins: 0,
+        grandFinalWins: 0,
+        bestSingleJokeVotes: 0,
+        voiceJokes: 0,
+        uploadedAudioJokes: 0,
+        textEdits: 0,
+        majorRewrites: 0,
+        audioEdits: 0,
+        audioRerecords: 0,
+        bothDirections: new Set(),
+        jokes: []
+      });
+    }
+    const pair = map.get(key);
+    const promptVersions = safeArray(joke.promptSnapshot?.versions);
+    const answerVersions = safeArray(joke.answerSnapshot?.versions);
+    const versions = [...promptVersions, ...answerVersions];
+    pair.totalJokes += 1;
+    pair.totalVotes += joke.votesCount || 0;
+    pair.roundWins += joke.isRoundWinner ? 1 : 0;
+    pair.bestSingleJokeVotes = Math.max(pair.bestSingleJokeVotes, joke.votesCount || 0);
+    pair.voiceJokes += (joke.promptAudio || joke.answerAudio) ? 1 : 0;
+    pair.uploadedAudioJokes += [joke.promptAudio, joke.answerAudio].filter((audio) => audio?.source === "uploaded").length;
+    pair.textEdits += Math.max(0, promptVersions.length - 1) + Math.max(0, answerVersions.length - 1);
+    pair.majorRewrites += versions.filter((version) => ["rewrite", "full_rewrite"].includes(version.change?.type)).length;
+    pair.audioEdits += versions.filter((version) => version.change?.audioAction && version.change.audioAction !== "none").length;
+    pair.audioRerecords += versions.filter((version) => version.change?.audioAction === "rerecorded").length;
+    pair.bothDirections.add(`${joke.promptAuthorId}->${joke.answerAuthorId}`);
+    pair.jokes.push(joke);
+  });
+
+  safeArray(room.grandFinal?.winners).forEach((winner) => {
+    if (!winner.promptAuthorId || !winner.answerAuthorId || winner.promptAuthorId === winner.answerAuthorId) return;
+    const key = pairKey(winner.promptAuthorId, winner.answerAuthorId);
+    if (map.has(key)) map.get(key).grandFinalWins += 1;
+  });
+
+  return [...map.values()].map((pair) => {
+    const avgVotesPerJoke = pair.totalJokes ? pair.totalVotes / pair.totalJokes : 0;
+    const bothDirectionsWorked = pair.bothDirections.size >= 2;
+    const power = pair.totalVotes * 10 + pair.roundWins * 20 + pair.grandFinalWins * 35 + avgVotesPerJoke * 8 + pair.bestSingleJokeVotes * 5 + (bothDirectionsWorked ? 10 : 0) + (pair.majorRewrites ? 8 : 0) + (pair.voiceJokes ? 5 : 0);
+    return { ...pair, avgVotesPerJoke, bothDirectionsWorked, power };
+  }).sort((a, b) => b.power - a.power);
+}
+
+function selectPairTitle(pair, playerAwardById, place, tiedCount = 1) {
+  if (pair.grandFinalWins > 0) return titleObject("main_pair_of_night", "Главная связка вечера", "pair", "Их шутка победила в финальном голосовании.", "legendary");
+  if (tiedCount >= 3 && place === 1) return titleObject("council_of_punchlines", "Совет панчлайнов", "pair", "Трон пришлось делить. Слишком много связок решили играть как чемпионы.", "legendary");
+  if (tiedCount === 2 && place === 1) return titleObject("double_pair_crown", "Двойная корона связок", "pair", "Сразу две связки забрали вершину. Лобби не смогло выбрать одну.", "legendary");
+  if (pair.majorRewrites > 0 && pair.roundWins > 0) return titleObject("draft_became_legend", "Черновик стал легендой", "rewriter", "Их шутка заметно изменилась перед тем, как забрала голоса.", "epic");
+  if (pair.textEdits >= 2 && pair.totalVotes > 0) return titleObject("editorial_duo", "Редакционный дуэт", "editor", "Они не просто сделали шутку — они довели её до финальной версии.", "epic");
+  if (pair.audioRerecords >= 2) return titleObject("rerecording_studio", "Студия перезаписи", "voice", "В этой связке голосовые переписывались чаще, чем некоторые шутки писались.", "epic");
+  if (pair.uploadedAudioJokes > 0 && pair.voiceJokes > 0) return titleObject("file_and_voice", "Файл и микрофон", "voice", "В этой связке работали и вложения, и голосовая подача.", "rare");
+
+  const [a, b] = pair.playerIds;
+  const tagA = playerAwardById.get(a)?.title?.tag || "stable";
+  const tagB = playerAwardById.get(b)?.title?.tag || "stable";
+  const recipe = PAIR_RECIPES[makePairRecipeKey(tagA, tagB)];
+  if (recipe) return titleObject(`pair_${makePairRecipeKey(tagA, tagB)}`, recipe[0], "pair", recipe[1], recipe[2]);
+
+  if (pair.bothDirectionsWorked) return titleObject("lobby_chemistry", "Химия лобби", "pair", "Неважно, кто начинал, а кто добивал — вместе у них всё равно получалось смешно.", "rare");
+  if (pair.avgVotesPerJoke >= 2) return titleObject("sniper_pair", "Снайперская связка", "pair", "Мало попыток, но высокий урон.", "rare");
+  return titleObject("best_pair", "Лучшая парочка", "pair", "Один закинул, второй добил — и вместе они собрали реакцию.", "common");
+}
+
+function buildPairAwards(room, playerAwards) {
+  const stats = buildPairStats(room);
+  const ranked = denseRank(stats, (item) => Math.round(item.power * 1000));
+  const playerAwardById = new Map(playerAwards.map((award) => [award.id, award]));
+  return ranked.map((pair) => {
+    const tiedCount = ranked.filter((item) => item.place === pair.place).length;
+    const title = selectPairTitle(pair, playerAwardById, pair.place, tiedCount);
+    return {
+      key: pair.key,
+      playerIds: pair.playerIds,
+      place: pair.place,
+      totalJokes: pair.totalJokes,
+      totalVotes: pair.totalVotes,
+      roundWins: pair.roundWins,
+      grandFinalWins: pair.grandFinalWins,
+      bestSingleJokeVotes: pair.bestSingleJokeVotes,
+      textEdits: pair.textEdits,
+      majorRewrites: pair.majorRewrites,
+      audioEdits: pair.audioEdits,
+      audioRerecords: pair.audioRerecords,
+      voiceJokes: pair.voiceJokes,
+      uploadedAudioJokes: pair.uploadedAudioJokes,
+      avgVotesPerJoke: pair.avgVotesPerJoke,
+      power: pair.power,
+      title,
+      players: pair.playerIds.map((id) => ({ id, name: getPlayerName(room, id), title: playerAwardById.get(id)?.title })),
+      statsPreview: [
+        `${pair.totalVotes} голосов`,
+        `${pair.totalJokes} совместн. шуток`,
+        pair.roundWins ? `${pair.roundWins} побед раунда` : "без побед раунда",
+        pair.textEdits ? `${pair.textEdits} правок` : "без правок"
+      ]
+    };
+  });
+}
+
+function buildTrioAwards(room, pairAwards) {
+  const players = room.players.map((player) => player.id);
+  if (players.length < 3) return [];
+  const pairByKey = new Map(pairAwards.map((pair) => [pair.key, pair]));
+  const trios = [];
+  for (let i = 0; i < players.length; i += 1) {
+    for (let j = i + 1; j < players.length; j += 1) {
+      for (let k = j + 1; k < players.length; k += 1) {
+        const ids = [players[i], players[j], players[k]];
+        const insidePairs = [pairKey(ids[0], ids[1]), pairKey(ids[0], ids[2]), pairKey(ids[1], ids[2])].map((key) => pairByKey.get(key)).filter(Boolean);
+        if (!insidePairs.length) continue;
+        const totalPairVotesInside = insidePairs.reduce((sum, pair) => sum + pair.totalVotes, 0);
+        const roundWinsInside = insidePairs.reduce((sum, pair) => sum + pair.roundWins, 0);
+        const grandFinalWinsInside = insidePairs.reduce((sum, pair) => sum + pair.grandFinalWins, 0);
+        const totalEdits = insidePairs.reduce((sum, pair) => sum + pair.textEdits + pair.majorRewrites, 0);
+        const totalAudio = insidePairs.reduce((sum, pair) => sum + pair.voiceJokes + pair.audioRerecords + pair.uploadedAudioJokes, 0);
+        const triangleCompleted = insidePairs.length === 3 && insidePairs.every((pair) => pair.totalVotes > 0);
+        const power = totalPairVotesInside * 8 + roundWinsInside * 15 + grandFinalWinsInside * 30 + (triangleCompleted ? 20 : 0) + (totalEdits >= 4 ? 12 : 0) + (totalAudio >= 3 ? 10 : 0);
+        if (power < 24) continue;
+        let title = titleObject("punchline_triangle", "Треугольник панчлайна", "trio", "Каждый в этом трио успел быть частью чужой шутки — и круг замкнулся.", "epic");
+        if (grandFinalWinsInside) title = titleObject("night_joke_triangle", "Трио шутки вечера", "trio", "Их связки дошли до финального выбора шутки вечера.", "legendary");
+        else if (totalEdits >= 4) title = titleObject("editorial_council", "Редакционный совет", "trio", "Три игрока чаще остальных правили, переписывали и доводили шутки до финального вида.", "epic");
+        else if (totalAudio >= 3) title = titleObject("recording_studio", "Студия звукозаписи", "trio", "Это трио чаще всех записывало, перезаписывало и прикрепляло аудио.", "epic");
+        trios.push({
+          playerIds: ids,
+          players: ids.map((id) => ({ id, name: getPlayerName(room, id) })),
+          title,
+          power,
+          statsPreview: [`${totalPairVotesInside} голосов внутри`, `${insidePairs.length} связки`, totalEdits ? `${totalEdits} правок` : "без правок"]
+        });
+      }
+    }
+  }
+  return trios.sort((a, b) => b.power - a.power).slice(0, 2);
+}
+
+function buildSpecialRoles(playerAwards) {
+  return playerAwards
+    .filter((award) => ["afk", "judge", "niche", "editor", "voice", "uploader"].includes(award.title.tag))
+    .slice(0, 3)
+    .map((award) => ({ playerId: award.id, playerName: award.name, title: award.title.title, description: award.title.description }));
+}
+
+function startGrandVoting(room) {
+  clearRoomTimer(room);
+  const candidates = safeArray(room.bestJokesHistory).map((joke, index) => ({
+    ...joke,
+    jokeId: joke.jokeId || joke.answerId || `best-${index}`,
+    finalVotes: 0,
+    finalVoters: []
+  }));
+
+  if (!candidates.length || getConnectedPlayers(room).length < 2) {
+    finishGame(room);
+    return;
+  }
+
+  setRoomStage(room, "grandVoting");
+  room.timerEndsAt = null;
+  room.grandFinal = {
+    candidates,
+    votes: [],
+    winners: [],
+    tie: null
+  };
+  setStageTimer(room, room.timers.voteSeconds || 30, () => {
+    const latest = rooms[room.code];
+    if (!latest || latest.state !== "grandVoting") return;
+    finishGrandVoting(latest);
+  });
+  emitRoom(room);
+}
+
+function finishGrandVoting(room) {
+  if (!room?.grandFinal) return finishGame(room);
+  const votesByJoke = new Map(room.grandFinal.candidates.map((joke) => [joke.jokeId, 0]));
+  room.grandFinal.votes.forEach((vote) => {
+    votesByJoke.set(vote.jokeId, (votesByJoke.get(vote.jokeId) || 0) + 1);
+  });
+  const candidates = room.grandFinal.candidates.map((joke) => ({
+    ...joke,
+    finalVotes: votesByJoke.get(joke.jokeId) || 0,
+    finalVoters: room.grandFinal.votes.filter((vote) => vote.jokeId === joke.jokeId).map((vote) => vote.voterId)
+  })).sort((a, b) => b.finalVotes - a.finalVotes || b.votesCount - a.votesCount);
+  let bestVotes = candidates[0]?.finalVotes || 0;
+  let winners = candidates.filter((joke) => joke.finalVotes === bestVotes);
+  if (bestVotes === 0) {
+    const bestOriginalVotes = Math.max(...candidates.map((joke) => joke.votesCount || 0), 0);
+    winners = candidates.filter((joke) => (joke.votesCount || 0) === bestOriginalVotes);
+  }
+  room.grandFinal.candidates = candidates;
+  room.grandFinal.winners = winners;
+  room.grandFinal.tie = winners.length > 1 ? { finalVotes: bestVotes, winnersCount: winners.length, jokeIds: winners.map((joke) => joke.jokeId) } : null;
+  finishGame(room);
+}
+
+function canPlayerVoteGrand(playerId, candidates) {
+  const available = candidates.filter((joke) => joke.promptAuthorId !== playerId && joke.answerAuthorId !== playerId);
+  return available.length > 0 ? available : candidates;
+}
+
+function buildFinalSummary(room) {
+  const playerAwards = buildPlayerAwards(room);
+  const pairAwards = buildPairAwards(room, playerAwards);
+  const trioAwards = buildTrioAwards(room, pairAwards);
+  const podium = playerAwards.filter((award) => award.place <= 3);
+  const otherPlayers = playerAwards.filter((award) => award.place > 3);
+  return {
+    generatedAt: Date.now(),
+    grandFinal: room.grandFinal || null,
+    podium,
+    otherPlayers,
+    players: playerAwards,
+    pairs: {
+      podium: pairAwards.filter((award) => award.place <= 3).slice(0, 6),
+      others: pairAwards.filter((award) => award.place > 3).slice(0, 12)
     },
-    {
-      title: COPY.titles[1].title,
-      playerName: leastVotes.name,
-      note: COPY.titles[1].note
-    },
-    {
-      title: COPY.titles[2].title,
-      playerName: bestSingle.name,
-      note: `${COPY.titles[2].note}: ${bestSingle.bestSingleRoundVotes} голосов`
-    },
-    {
-      title: COPY.titles[3].title,
-      playerName: smallLead ? winner.name : second.name,
-      note: smallLead ? COPY.titles[3].note : "был близко к победе"
-    },
-    ...COPY.titles.slice(4).map((title, index) => ({
-      title: title.title,
-      playerName: playerForExtra(index).name,
-      note: title.note
-    }))
-  ];
+    trios: trioAwards,
+    specialRoles: buildSpecialRoles(playerAwards),
+    bestJokes: safeArray(room.bestJokesHistory)
+  };
+}
+
+function buildTitles(room) {
+  const summary = room.finalSummary || buildFinalSummary(room);
+  return safeArray(summary.players).map((player) => ({
+    title: player.title.title,
+    playerName: player.name,
+    note: player.title.description
+  }));
 }
 
 function finishGame(room) {
   clearRoomTimer(room);
-  room.state = "finished";
+  setRoomStage(room, "finished");
   room.timerEndsAt = null;
+  room.finalSummary = buildFinalSummary(room);
   room.titles = buildTitles(room);
   emitRoom(room);
 }
@@ -759,6 +1408,7 @@ io.on("connection", (socket) => {
       round: 1,
       maxRounds: normalized.maxRounds,
       timerEndsAt: null,
+      stageStartedAt: Date.now(),
       timers: normalized.timers,
       settings: normalized.settings,
       players: [createPlayer(socket, cleanName, cleanSession)],
@@ -772,6 +1422,10 @@ io.on("connection", (socket) => {
       lastBestJokes: [],
       lastRoundTie: null,
       bestJokesHistory: [],
+      jokeArchive: [],
+      events: [],
+      grandFinal: null,
+      finalSummary: null,
       titles: [],
       timerHandle: null,
       emptyDeleteTimer: null
@@ -802,6 +1456,8 @@ io.on("connection", (socket) => {
       emitRoom(room);
       emitOpenRooms();
       if (wasDisconnected) {
+        incrementPlayerStat(room, existingPlayer.id, "reconnects");
+        logEvent(room, "reconnect", existingPlayer.id, {});
         emitNotice(room, COPY.notices.returned(existingPlayer.name), "reconnect", socket);
       }
       return;
@@ -892,6 +1548,12 @@ io.on("connection", (socket) => {
       player.bestSingleRoundVotes = 0;
     });
     room.bestJokesHistory = [];
+    room.jokeArchive = [];
+    room.events = [];
+    room.grandFinal = null;
+    room.finalSummary = null;
+    room.titles = [];
+    logEvent(room, "start_game", socket.data.playerId, {});
     startGameCountdown(room);
     emitOpenRooms();
   });
@@ -907,19 +1569,34 @@ io.on("connection", (socket) => {
     if (!promptText && !cleanedAudio.audio) return emitError(socket, COPY.errors.emptyPrompt);
 
     const existingPrompt = room.prompts.find((prompt) => prompt.authorId === playerId);
+    const version = makeSubmissionVersion({ room, item: existingPrompt, text: promptText, audio: cleanedAudio.audio, source: "manual" });
+
     if (existingPrompt) {
       existingPrompt.text = promptText;
       existingPrompt.audio = cleanedAudio.audio;
+      existingPrompt.updatedAt = Date.now();
+      existingPrompt.versions = safeArray(existingPrompt.versions);
+      existingPrompt.versions.push(version);
+      applySubmissionStats(room, playerId, version, "prompt", true);
+      logEvent(room, "update_prompt", playerId, { promptId: existingPrompt.id, version: version.version, change: version.change });
       emitRoom(room);
       return;
     }
 
-    room.prompts.push({
+    const prompt = {
       id: makeId("prompt"),
+      round: room.round,
       authorId: playerId,
       text: promptText,
-      audio: cleanedAudio.audio
-    });
+      audio: cleanedAudio.audio,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      submittedAtMs: getStageElapsedMs(room),
+      versions: [version]
+    };
+    room.prompts.push(prompt);
+    applySubmissionStats(room, playerId, version, "prompt", false);
+    logEvent(room, "submit_prompt", playerId, { promptId: prompt.id, version: 1, textLength: promptText.length, audio: version.audioMeta });
 
     if (getConnectedPlayers(room).every((player) => room.prompts.some((prompt) => prompt.authorId === player.id))) {
       moveToAnswering(room);
@@ -940,20 +1617,35 @@ io.on("connection", (socket) => {
     if (!room.assignments[playerId]) return emitError(socket, COPY.errors.noAssignment);
 
     const existingAnswer = room.answers.find((answer) => answer.authorId === playerId);
+    const version = makeSubmissionVersion({ room, item: existingAnswer, text: answerText, audio: cleanedAudio.audio, source: "manual" });
+
     if (existingAnswer) {
       existingAnswer.text = answerText;
       existingAnswer.audio = cleanedAudio.audio;
+      existingAnswer.updatedAt = Date.now();
+      existingAnswer.versions = safeArray(existingAnswer.versions);
+      existingAnswer.versions.push(version);
+      applySubmissionStats(room, playerId, version, "answer", true);
+      logEvent(room, "update_answer", playerId, { answerId: existingAnswer.id, version: version.version, change: version.change });
       emitRoom(room);
       return;
     }
 
-    room.answers.push({
+    const answer = {
       id: makeId("answer"),
+      round: room.round,
       promptId: room.assignments[playerId],
       authorId: playerId,
       text: answerText,
-      audio: cleanedAudio.audio
-    });
+      audio: cleanedAudio.audio,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      submittedAtMs: getStageElapsedMs(room),
+      versions: [version]
+    };
+    room.answers.push(answer);
+    applySubmissionStats(room, playerId, version, "answer", false);
+    logEvent(room, "submit_answer", playerId, { answerId: answer.id, promptId: answer.promptId, version: 1, textLength: answerText.length, audio: version.audioMeta });
 
     if (getConnectedPlayers(room).every((player) => room.answers.some((answer) => answer.authorId === player.id))) {
       moveToRevealing(room);
@@ -979,7 +1671,9 @@ io.on("connection", (socket) => {
     if (!answer) return emitError(socket, COPY.errors.jokeMissing);
     if (answer.authorId === playerId) return emitError(socket, COPY.errors.selfVote);
 
-    room.votes.push({ voterId: playerId, answerId });
+    room.votes.push({ voterId: playerId, answerId, createdAt: Date.now(), elapsedMs: getStageElapsedMs(room) });
+    incrementPlayerStat(room, playerId, "votesGiven");
+    logEvent(room, "vote_round", playerId, { answerId });
 
     if (getConnectedPlayers(room).every((player) => {
       const ownOnly = room.answers.every((answerItem) => answerItem.authorId === player.id);
@@ -997,10 +1691,31 @@ io.on("connection", (socket) => {
     if (room.state !== "scoreboard") return;
 
     if (room.round >= room.maxRounds) {
-      finishGame(room);
+      startGrandVoting(room);
     } else {
       room.round += 1;
       startRound(room);
+    }
+  });
+
+  socket.on("submitGrandVote", ({ jokeId } = {}) => {
+    const room = rooms[socket.data.roomCode];
+    const playerId = socket.data.playerId;
+    if (!room || room.state !== "grandVoting" || !room.grandFinal) return;
+    if (room.grandFinal.votes.some((vote) => vote.voterId === playerId)) return;
+
+    const available = canPlayerVoteGrand(playerId, room.grandFinal.candidates);
+    const joke = available.find((item) => item.jokeId === jokeId);
+    if (!joke) return emitError(socket, COPY.errors.grandSelfVote);
+
+    room.grandFinal.votes.push({ voterId: playerId, jokeId, createdAt: Date.now(), elapsedMs: getStageElapsedMs(room) });
+    incrementPlayerStat(room, playerId, "votesGiven");
+    logEvent(room, "vote_grand", playerId, { jokeId });
+
+    if (getConnectedPlayers(room).every((player) => room.grandFinal.votes.some((vote) => vote.voterId === player.id))) {
+      finishGrandVoting(room);
+    } else {
+      emitRoom(room);
     }
   });
 
@@ -1019,6 +1734,10 @@ io.on("connection", (socket) => {
     });
     resetRoundData(room);
     room.bestJokesHistory = [];
+    room.jokeArchive = [];
+    room.events = [];
+    room.grandFinal = null;
+    room.finalSummary = null;
     room.titles = [];
     emitRoom(room);
     emitOpenRooms();
@@ -1056,6 +1775,8 @@ io.on("connection", (socket) => {
       const latestPlayer = latest.players.find((item) => item.id === playerId);
       if (!latestPlayer || latestPlayer.socketId !== socket.id) return;
 
+      incrementPlayerStat(latest, playerId, "disconnects");
+      logEvent(latest, "disconnect", playerId, {});
       latestPlayer.connected = false;
       latestPlayer.socketId = null;
       latestPlayer.disconnectTimer = null;
