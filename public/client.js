@@ -13,6 +13,38 @@ const STORAGE_KEYS = {
   playerName: "dobeyFrazu.playerName"
 };
 
+const ROUTES = {
+  home: "/",
+  create: "/create",
+  join: "/join-game",
+  lobbies: "/lobbies",
+  code: "/join-code"
+};
+
+const DEFAULT_ROOM_SETTINGS = {
+  maxRounds: 5,
+  promptSeconds: 60,
+  answerSeconds: 60,
+  voteSeconds: 30,
+  anonymousMode: false,
+  soundsEnabled: true,
+  promptMode: "manual",
+  assignmentMode: "different",
+  maxPlayers: 6,
+  publicLobby: true
+};
+
+const SOUND_FILES = {
+  click: "/sounds/ui-click.mp3",
+  copy: "/sounds/copy.mp3",
+  join: "/sounds/join.mp3",
+  leave: "/sounds/leave.mp3",
+  reveal: "/sounds/reveal.mp3",
+  vote: "/sounds/vote.mp3",
+  win: "/sounds/win.mp3",
+  error: "/sounds/error.mp3"
+};
+
 const COPY = {
   appTitle: "Добей фразу",
   tagline: "игра для компании друзей",
@@ -22,7 +54,7 @@ const COPY = {
     players: "Игроки",
     settings: "Настройки игры",
     openRooms: "Открытые лобби",
-    openRoomsLead: "Выберите комнату из списка или обновите список, если кто-то только что создал лобби.",
+    openRoomsLead: "Выберите лобби из списка.",
     progress: "Прогресс",
     roundVotes: "Результаты голосования",
     history: "Лучшие шутки",
@@ -31,12 +63,16 @@ const COPY = {
   },
   buttons: {
     openCreate: "Собрать лобби",
-    browseRooms: "Смотреть открытые лобби",
+    browseRooms: "Смотреть игры",
     refreshRooms: "Обновить список",
-    joinRoom: "Войти по коду",
+    joinRoom: "Войти",
     back: "Назад в меню",
-    createRoom: "Создать комнату",
-    copyCode: "Скопировать шифр",
+    createRoom: "Создать лобби",
+    copyCode: "Скопировать код",
+    copyInvite: "Скопировать ссылку",
+    editSettings: "Изменить настройки",
+    saveSettings: "Сохранить",
+    cancelSettings: "Отмена",
     startGame: "Начать игру",
     submitPrompt: "Зафиксить начало",
     submitAnswer: "Отправить концовку",
@@ -49,13 +85,14 @@ const COPY = {
     nextRound: "Еще раунд, и точно всё",
     final: "Показать финал",
     restart: "Вернуть всех в лобби",
-    leaveRoom: "Выйти из комнаты",
-    deleteRoom: "Удалить комнату"
+    editName: "Сменить ник",
+    leaveRoom: "Выйти",
+    deleteRoom: "Удалить лобби"
   },
   screens: {
     home: "Заходите в игру",
     lobbies: "Открытые лобби",
-    create: "Панель хоста",
+    create: "Настройки лобби",
     waiting: "Лобби готовится",
     prompting: (round) => `Раунд ${round}: кинь начало`,
     answering: "Добей фразу, пока не передумал",
@@ -84,7 +121,7 @@ const COPY = {
     assignmentDifferent: "Каждый добивает чужую фразу",
     assignmentSame: "Все добивают одну и ту же фразу",
     maxPlayers: "Максимум игроков",
-    publicLobby: "Показывать комнату в списке открытых лобби",
+    publicLobby: "Показывать лобби в списке открытых",
     anonymous: "Скрывать авторов до итогов раунда",
     sounds: "Звуки при раскрытии"
   },
@@ -110,10 +147,13 @@ const COPY = {
     copied: "Скопировано.",
     connected: "Подключение восстановлено.",
     disconnected: "Соединение потеряно. Пробуем переподключиться.",
-    sessionExpired: "Старая комната больше недоступна.",
-    enterName: "Сначала введите ник.",
-    enterCode: "Введите код комнаты.",
-    noOpenRooms: "Пока нет открытых лобби. Можно создать свое.",
+    sessionExpired: "Старое лобби больше недоступно.",
+    enterName: "Введите ник",
+    enterCode: "Введите код лобби",
+    noOpenRooms: "Пока открытых лобби нет",
+    noOpenRoomsHint: "Создай первое лобби и позови друзей",
+    loadingRooms: "Обновляем список...",
+    roomsRefreshFailed: "Не получилось обновить список. Попробуйте ещё раз.",
     promptSubmitted: "Начало отправлено. Ждем остальных.",
     answerSubmitted: "Концовка отправлена. Ждем остальных.",
     voteSubmitted: "Голос принят. Ждем остальных.",
@@ -121,10 +161,16 @@ const COPY = {
     hostDecision: "Ждем решение хоста.",
     hostCanRestart: "Хост может вернуть всех в лобби.",
     confirmLeave: "Вы уверены выйти?",
-    confirmDelete: "Удалить комнату для всех игроков?",
-    leftRoom: "Вы вышли из комнаты.",
-    roomDeleted: "Комната удалена.",
-    roomCreated: (code) => `Комната ${code} создана.`,
+    confirmDelete: "Удалить лобби для всех игроков?",
+    leftRoom: "Вы вышли из лобби.",
+    roomDeleted: "Лобби удалено.",
+    gameStartedTitle: "Игра уже началась",
+    gameStartedText: "Новые игроки больше не могут присоединиться к этому лобби.",
+    lobbyMissingTitle: "Лобби не найдено",
+    lobbyMissingText: "Такого лобби нет. Возможно, его удалили или код написан с ошибкой.",
+    routeMissingTitle: "Такой страницы нет",
+    routeMissingText: "Похоже, ссылка написана неправильно.",
+    roomCreated: (code) => `Лобби ${code} создано.`,
     joined: (code) => `Вы вошли в ${code}.`,
     reconnected: (code) => `Сессия в ${code} восстановлена.`,
     returned: (code) => `Вы вернулись в ${code}.`
@@ -132,12 +178,66 @@ const COPY = {
 };
 
 let currentRoom = null;
-let currentScreen = "home";
+let currentScreen = screenFromPath(location.pathname);
 let myName = localStorage.getItem(STORAGE_KEYS.playerName) || "";
 let previousState = null;
 let timerInterval = null;
 let sessionId = getOrCreateSessionId();
 let openRooms = [];
+let lobbySettingsOpen = false;
+let openRoomsLoading = false;
+let openRoomsTimer = null;
+let pendingNameAction = null;
+let routeRoomCode = roomCodeFromPath(location.pathname);
+let inviteJoinRequestedFor = null;
+
+function screenFromPath(pathname) {
+  if (pathname === ROUTES.home) return "home";
+  if (pathname === "/create-lobby") return "create";
+  if (pathname === ROUTES.create) return "create";
+  if (pathname === ROUTES.join) return "join";
+  if (pathname === ROUTES.lobbies) return "lobbies";
+  if (pathname === ROUTES.code) return "code";
+  if (/^\/(?:join|lobby|game)\/[a-zA-Z0-9]{4,8}\/?$/.test(pathname)) return "invite";
+  if (pathname === "/game-started") return "inviteBlocked";
+  if (pathname === "/lobby-not-found") return "lobbyMissing";
+  return "notFound";
+}
+
+function roomCodeFromPath(pathname) {
+  const match = pathname.match(/^\/(?:join|lobby|game)\/([a-zA-Z0-9]{4,8})\/?$/);
+  return match ? match[1].toUpperCase() : null;
+}
+
+function navigateTo(screen, { replace = false } = {}) {
+  currentScreen = screen;
+  routeRoomCode = roomCodeFromPath(location.pathname);
+  const path = ROUTES[screen] || ROUTES.home;
+  if (location.pathname !== path) {
+    const method = replace ? "replaceState" : "pushState";
+    history[method]({ screen }, "", path);
+  }
+  routeRoomCode = roomCodeFromPath(location.pathname);
+  if (screen === "lobbies") requestOpenRooms();
+  render();
+}
+
+function setRoute(path, { replace = false } = {}) {
+  if (location.pathname === path) return;
+  const method = replace ? "replaceState" : "pushState";
+  history[method]({ screen: screenFromPath(path) }, "", path);
+  currentScreen = screenFromPath(path);
+  routeRoomCode = roomCodeFromPath(path);
+}
+
+function pathForRoom(room) {
+  if (!room) return ROUTES.home;
+  return room.state === "waiting" ? `/lobby/${room.code}` : `/game/${room.code}`;
+}
+
+function inviteLink(code) {
+  return `${location.origin}/join/${code}`;
+}
 
 function getOrCreateSessionId() {
   const saved = localStorage.getItem(STORAGE_KEYS.sessionId);
@@ -178,6 +278,33 @@ function showToast(message) {
   }, 2600);
 }
 
+function playSound(name, { respectRoomSetting = false, fallback = null } = {}) {
+  if (respectRoomSetting && currentRoom?.settings.soundsEnabled === false) return;
+  const src = SOUND_FILES[name];
+  if (!src) {
+    fallback?.();
+    return;
+  }
+
+  const audio = new Audio(src);
+  audio.volume = 0.55;
+  audio.play().catch(() => {
+    fallback?.();
+  });
+}
+
+function requestOpenRooms() {
+  openRoomsLoading = true;
+  if (openRoomsTimer) clearTimeout(openRoomsTimer);
+  openRoomsTimer = setTimeout(() => {
+    if (!openRoomsLoading) return;
+    openRoomsLoading = false;
+    if (!currentRoom && currentScreen === "lobbies") render();
+    showToast(COPY.messages.roomsRefreshFailed);
+  }, 5000);
+  socket.emit("listOpenRooms");
+}
+
 function escapeHtml(value) {
   return String(value || "")
     .replaceAll("&", "&amp;")
@@ -197,6 +324,10 @@ function isHost() {
 
 function getPlayerName(id) {
   return currentRoom?.players.find((player) => player.id === id)?.name || "аноним из оперативки";
+}
+
+function getInitial(name) {
+  return String(name || "?").trim().slice(0, 1).toUpperCase() || "?";
 }
 
 function getPrompt(promptId) {
@@ -236,6 +367,8 @@ function startTimerView() {
 }
 
 function copyText(text) {
+  playSound("copy");
+
   if (navigator.clipboard?.writeText) {
     return navigator.clipboard.writeText(text).then(() => showToast(COPY.messages.copied));
   }
@@ -251,6 +384,72 @@ function copyText(text) {
   textarea.remove();
   showToast(COPY.messages.copied);
   return Promise.resolve();
+}
+
+function copyWithButtonFeedback(text, button) {
+  const originalText = button?.textContent;
+  return copyText(text).then(() => {
+    if (!button || !originalText) return;
+    button.textContent = "Скопировано";
+    button.disabled = true;
+    setTimeout(() => {
+      button.textContent = originalText;
+      button.disabled = false;
+    }, 1700);
+  });
+}
+
+function ensureNameThen(action) {
+  if (myName) {
+    action();
+    return;
+  }
+
+  pendingNameAction = action;
+  renderNameModal();
+}
+
+function closeNameModal() {
+  pendingNameAction = null;
+  document.getElementById("nameModal")?.remove();
+}
+
+function closeSettingsModal() {
+  lobbySettingsOpen = false;
+  document.getElementById("settingsModal")?.remove();
+}
+
+function renderNameModal({ title = "Введите ник", note = "Он будет виден друзьям в лобби.", buttonText = "Продолжить" } = {}) {
+  document.getElementById("nameModal")?.remove();
+  document.body.insertAdjacentHTML("beforeend", `
+    <div class="modal-backdrop" id="nameModal">
+      <section class="name-modal" role="dialog" aria-modal="true" aria-labelledby="nameModalTitle">
+        <h2 id="nameModalTitle">${escapeHtml(title)}</h2>
+        <p class="meta">${escapeHtml(note)}</p>
+        <input id="modalNameInput" maxlength="32" placeholder="${COPY.placeholders.name}" value="${escapeHtml(myName)}" autocomplete="nickname">
+        <div class="modal-actions">
+          <button class="btn primary" data-action="confirm-name">${escapeHtml(buttonText)}</button>
+          <button class="btn ghost" data-action="cancel-name">Отмена</button>
+        </div>
+      </section>
+    </div>
+  `);
+  document.getElementById("modalNameInput")?.focus();
+}
+
+function renderSettingsModal() {
+  document.getElementById("settingsModal")?.remove();
+  document.body.insertAdjacentHTML("beforeend", `
+    <div class="modal-backdrop" id="settingsModal">
+      <section class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settingsModalTitle">
+        <div class="section-row">
+          <h2 id="settingsModalTitle" class="section-title">Настройки игры</h2>
+          <button class="modal-close" data-action="toggle-settings" aria-label="Закрыть настройки">×</button>
+        </div>
+        ${roomSettingsFormHtml(currentRoom)}
+      </section>
+    </div>
+  `);
 }
 
 function playTone(notes) {
@@ -280,54 +479,167 @@ function playTone(notes) {
 
 function playRevealSound() {
   if (!currentRoom?.settings.soundsEnabled) return;
-  playTone([
-    { frequency: 523, start: 0, duration: 0.09 },
-    { frequency: 659, start: 0.1, duration: 0.09 },
-    { frequency: 784, start: 0.2, duration: 0.14 }
-  ]);
+  playSound("reveal", {
+    respectRoomSetting: true,
+    fallback: () => playTone([
+      { frequency: 523, start: 0, duration: 0.09 },
+      { frequency: 659, start: 0.1, duration: 0.09 },
+      { frequency: 784, start: 0.2, duration: 0.14 }
+    ])
+  });
 }
 
 function playWinSound() {
   if (!currentRoom?.settings.soundsEnabled) return;
-  playTone([
-    { frequency: 659, start: 0, duration: 0.12 },
-    { frequency: 784, start: 0.14, duration: 0.12 },
-    { frequency: 988, start: 0.28, duration: 0.22 }
-  ]);
+  playSound("win", {
+    respectRoomSetting: true,
+    fallback: () => playTone([
+      { frequency: 659, start: 0, duration: 0.12 },
+      { frequency: 784, start: 0.14, duration: 0.12 },
+      { frequency: 988, start: 0.28, duration: 0.22 }
+    ])
+  });
 }
 
 function renderHome() {
+  app.classList.add("plain-menu-card");
   app.innerHTML = `
-    <h2 class="panel-title">${COPY.screens.home}</h2>
-    <div class="home-layout home-layout-single">
-      <section class="home-panel home-hero-panel">
-        <p class="meta">Соберите свою комнату или зайдите к друзьям по коду. Открытые лобби теперь живут на отдельном экране.</p>
-        <div class="grid">
-      <label class="field">
-        <span>${COPY.labels.name}</span>
-        <input id="nameInput" maxlength="32" placeholder="${COPY.placeholders.name}" value="${escapeHtml(myName)}">
-      </label>
-      <label class="field">
-        <span>${COPY.labels.roomCode}</span>
-        <input id="roomCodeInput" maxlength="8" placeholder="${COPY.placeholders.roomCode}">
-      </label>
-        </div>
-        <div class="actions">
-          <button class="btn primary" data-action="open-create">${COPY.buttons.openCreate}</button>
-          <button class="btn ghost" data-action="open-lobbies">${COPY.buttons.browseRooms}</button>
-          <button class="btn yellow" data-action="join-room">${COPY.buttons.joinRoom}</button>
-        </div>
-      </section>
+    <div class="simple-menu">
+      <button class="btn primary menu-btn" data-route="create">Создать игру</button>
+      <button class="btn primary menu-btn" data-route="join">Войти в игру</button>
     </div>
   `;
 }
 
+function renderJoinMenu() {
+  app.classList.add("plain-menu-card");
+  app.innerHTML = `
+    <h2 class="panel-title menu-title">Войти в игру</h2>
+    <div class="simple-menu">
+      <button class="btn primary menu-btn" data-route="lobbies">Список серверов</button>
+      <button class="btn primary menu-btn" data-route="code">Войти по коду</button>
+      <button class="btn ghost menu-btn" data-route="home">Назад</button>
+    </div>
+  `;
+}
+
+function renderCodeJoin() {
+  app.classList.add("plain-menu-card", "code-join-card");
+  app.innerHTML = `
+    <h2 class="panel-title">Войти по коду</h2>
+    <section class="home-panel code-panel">
+      <label class="field">
+        <span>${COPY.labels.roomCode}</span>
+        <input id="roomCodeInput" maxlength="8" placeholder="${COPY.placeholders.roomCode}" autocomplete="off">
+      </label>
+      <div class="actions">
+        <button class="btn primary" data-action="join-room">${COPY.buttons.joinRoom}</button>
+        <button class="btn ghost" data-route="join">Назад</button>
+      </div>
+    </section>
+  `;
+}
+
+function renderInviteJoin() {
+  const code = routeRoomCode || "";
+  app.classList.add("plain-menu-card", "code-join-card");
+  app.innerHTML = `
+    <h2 class="panel-title">Вход в лобби</h2>
+    <section class="home-panel code-panel">
+      <div class="invite-route-code">
+        <span class="bento-kicker">код лобби</span>
+        <span class="room-code">${escapeHtml(code)}</span>
+      </div>
+      <p class="meta centered-meta">Сейчас попросим ник и добавим вас в лобби, если игра еще не началась.</p>
+      <div class="actions">
+        <button class="btn primary" data-action="join-invite">${myName ? "Войти в лобби" : "Ввести ник"}</button>
+        <button class="btn ghost" data-route="home">Назад</button>
+      </div>
+    </section>
+  `;
+}
+
+function renderInviteBlocked() {
+  app.classList.add("plain-menu-card", "code-join-card");
+  app.innerHTML = `
+    <h2 class="panel-title">${COPY.messages.gameStartedTitle}</h2>
+    <section class="home-panel code-panel">
+      <p class="meta centered-meta">${COPY.messages.gameStartedText}</p>
+      <div class="actions">
+        <button class="btn primary" data-route="home">В главное меню</button>
+        <button class="btn ghost" data-route="lobbies">Смотреть открытые игры</button>
+      </div>
+    </section>
+  `;
+}
+
+function renderInfoScreen({ title, text, primaryText = "В главное меню", primaryRoute = "home", secondaryText = "Смотреть открытые игры", secondaryRoute = "lobbies" }) {
+  app.classList.add("plain-menu-card", "code-join-card");
+  app.innerHTML = `
+    <h2 class="panel-title">${escapeHtml(title)}</h2>
+    <section class="home-panel code-panel">
+      <p class="meta centered-meta">${escapeHtml(text)}</p>
+      <div class="actions">
+        <button class="btn primary" data-route="${escapeHtml(primaryRoute)}">${escapeHtml(primaryText)}</button>
+        <button class="btn ghost" data-route="${escapeHtml(secondaryRoute)}">${escapeHtml(secondaryText)}</button>
+      </div>
+    </section>
+  `;
+}
+
+function renderLobbyMissing() {
+  renderInfoScreen({
+    title: COPY.messages.lobbyMissingTitle,
+    text: COPY.messages.lobbyMissingText,
+    primaryText: "В главное меню",
+    primaryRoute: "home",
+    secondaryText: "Смотреть открытые игры",
+    secondaryRoute: "lobbies"
+  });
+}
+
+function renderNotFound() {
+  renderInfoScreen({
+    title: COPY.messages.routeMissingTitle,
+    text: COPY.messages.routeMissingText,
+    primaryText: "В главное меню",
+    primaryRoute: "home",
+    secondaryText: "Смотреть открытые игры",
+    secondaryRoute: "lobbies"
+  });
+}
+
+function requestInviteJoin() {
+  const code = routeRoomCode;
+  if (!code) return navigateTo("home", { replace: true });
+  ensureNameThen(() => {
+    const key = `${code}:${sessionId}:${myName}`;
+    if (inviteJoinRequestedFor === key) return;
+    inviteJoinRequestedFor = key;
+    socket.emit("joinRoom", { name: myName, code, sessionId });
+  });
+}
+
 function openRoomsHtml({ compact = false } = {}) {
+  if (openRoomsLoading) {
+    return `
+      <div class="empty-lobbies">
+        <div class="empty-icon">...</div>
+        <h3 class="section-title">${COPY.messages.loadingRooms}</h3>
+      </div>
+    `;
+  }
+
   if (!openRooms.length) {
     return `
       <div class="empty-lobbies">
-        <p class="meta">${COPY.messages.noOpenRooms}</p>
-        <button class="btn ghost" data-action="refresh-lobbies">${COPY.buttons.refreshRooms}</button>
+        <div class="empty-icon">+</div>
+        <h3 class="section-title">${COPY.messages.noOpenRooms}</h3>
+        <p class="meta">${COPY.messages.noOpenRoomsHint}</p>
+        <div class="empty-actions">
+          <button class="btn primary" data-route="create">Создать игру</button>
+          <button class="btn ghost" data-action="refresh-lobbies">${COPY.buttons.refreshRooms}</button>
+        </div>
       </div>
     `;
   }
@@ -337,15 +649,14 @@ function openRoomsHtml({ compact = false } = {}) {
       ${openRooms.map((room) => `
         <article class="open-room" data-action="join-open-room" data-room-code="${escapeHtml(room.code)}" tabindex="0" role="button" aria-label="Войти в лобби ${escapeHtml(room.code)}">
           <div class="open-room-main">
+            <div class="open-room-host">Лобби ${escapeHtml(room.hostName)}</div>
             <div class="open-room-code">${escapeHtml(room.code)}</div>
-            <p class="meta">Хост: ${escapeHtml(room.hostName)}</p>
+            <p class="meta">Код: ${escapeHtml(room.code)}</p>
           </div>
           <div class="open-room-stats">
             <span>${room.playersCount}/${room.maxPlayers} игроков</span>
-            <span>${room.maxRounds} раунд.</span>
-            <span>${room.promptMode === "auto" ? "авто-начала" : "свои начала"}</span>
           </div>
-          <button class="btn ghost" data-action="join-open-room" data-room-code="${escapeHtml(room.code)}">Войти</button>
+          <button class="btn primary compact-btn" data-action="join-open-room" data-room-code="${escapeHtml(room.code)}">Войти</button>
         </article>
       `).join("")}
     </div>
@@ -353,38 +664,26 @@ function openRoomsHtml({ compact = false } = {}) {
 }
 
 function renderLobbyBrowser() {
+  app.classList.add("server-list-card");
   app.innerHTML = `
-    <div class="screen-head">
-      <div>
-        <h2 class="panel-title">${COPY.screens.lobbies}</h2>
-        <p class="meta">${COPY.labels.openRoomsLead}</p>
+    <h2 class="panel-title centered-title lobby-browser-title">${COPY.screens.lobbies}</h2>
+    <section class="lobby-browser-panel">
+      <div class="lobby-browser-toolbar">
+        <div class="lobby-browser-count">${openRooms.length} лобби</div>
+        <div class="actions">
+          <button class="btn ghost icon-btn" data-action="refresh-lobbies" title="${COPY.buttons.refreshRooms}" aria-label="${COPY.buttons.refreshRooms}">↻</button>
+          <button class="btn ghost icon-btn" data-route="join" title="Назад" aria-label="Назад">←</button>
+        </div>
       </div>
-      <div class="lobby-browser-count">${openRooms.length} ${openRooms.length === 1 ? "комната" : "комнат"}</div>
-    </div>
-    <section class="home-panel lobby-browser-panel">
-      <div class="grid lobby-browser-controls">
-        <label class="field">
-          <span>${COPY.labels.name}</span>
-          <input id="nameInput" maxlength="32" placeholder="${COPY.placeholders.name}" value="${escapeHtml(myName)}">
-        </label>
-        <label class="field">
-          <span>${COPY.labels.roomCode}</span>
-          <input id="roomCodeInput" maxlength="8" placeholder="${COPY.placeholders.roomCode}">
-        </label>
-      </div>
-      <div class="actions">
-        <button class="btn yellow" data-action="join-room">${COPY.buttons.joinRoom}</button>
-        <button class="btn ghost" data-action="refresh-lobbies">${COPY.buttons.refreshRooms}</button>
-        <button class="btn ghost" data-action="home">${COPY.buttons.back}</button>
-      </div>
-      ${openRoomsHtml()}
+      <div class="rooms-frame">${openRoomsHtml()}</div>
     </section>
   `;
 }
 
 function renderCreateRoom() {
+  app.classList.add("create-game-card");
   app.innerHTML = `
-    <h2 class="panel-title">${COPY.screens.create}</h2>
+    <h2 class="panel-title centered-title">Создать игру</h2>
     <div class="grid">
       <label class="field"><span>${COPY.settings.rounds}</span><input id="maxRounds" type="number" min="1" max="20" value="5"></label>
       <label class="field"><span>${COPY.settings.promptTimer}</span><input id="promptSeconds" type="number" min="0" value="60"></label>
@@ -407,22 +706,60 @@ function renderCreateRoom() {
       <label class="check-row"><input id="soundsEnabled" type="checkbox" checked> ${COPY.settings.sounds}</label>
       <label class="check-row"><input id="publicLobby" type="checkbox" checked> ${COPY.settings.publicLobby}</label>
     </div>
-    <div class="actions">
-      <button class="btn ghost" data-action="home">${COPY.buttons.back}</button>
-      <button class="btn primary" data-action="create-room">${COPY.buttons.createRoom}</button>
+    <div class="actions create-actions">
+      <button class="btn primary" data-action="create-room">Создать лобби</button>
+      <button class="btn ghost" data-route="home">Назад</button>
+    </div>
+  `;
+}
+
+function roomSettingsFormHtml(room = null) {
+  const maxRounds = room?.maxRounds ?? DEFAULT_ROOM_SETTINGS.maxRounds;
+  const timers = room?.timers || DEFAULT_ROOM_SETTINGS;
+  const settings = room?.settings || DEFAULT_ROOM_SETTINGS;
+
+  return `
+    <div class="settings-editor">
+      <div class="grid compact-grid">
+        <label class="field"><span>${COPY.settings.rounds}</span><input id="maxRounds" type="number" min="1" max="20" value="${maxRounds}"></label>
+        <label class="field"><span>${COPY.settings.maxPlayers}</span><input id="maxPlayers" type="number" min="2" max="12" value="${settings.maxPlayers}"></label>
+        <label class="field"><span>${COPY.settings.promptTimer}</span><input id="promptSeconds" type="number" min="0" value="${timers.promptSeconds}"></label>
+        <label class="field"><span>${COPY.settings.answerTimer}</span><input id="answerSeconds" type="number" min="0" value="${timers.answerSeconds}"></label>
+        <label class="field"><span>${COPY.settings.voteTimer}</span><input id="voteSeconds" type="number" min="0" value="${timers.voteSeconds}"></label>
+        <label class="field"><span>${COPY.settings.promptMode}</span>
+          <select id="promptMode">
+            <option value="manual" ${settings.promptMode === "manual" ? "selected" : ""}>${COPY.settings.promptManual}</option>
+            <option value="auto" ${settings.promptMode === "auto" ? "selected" : ""}>${COPY.settings.promptAuto}</option>
+          </select>
+        </label>
+        <label class="field"><span>${COPY.settings.assignmentMode}</span>
+          <select id="assignmentMode">
+            <option value="different" ${settings.assignmentMode === "different" ? "selected" : ""}>${COPY.settings.assignmentDifferent}</option>
+            <option value="same" ${settings.assignmentMode === "same" ? "selected" : ""}>${COPY.settings.assignmentSame}</option>
+          </select>
+        </label>
+      </div>
+      <div class="settings-checks">
+        <label class="check-row"><input id="anonymousMode" type="checkbox" ${settings.anonymousMode ? "checked" : ""}> ${COPY.settings.anonymous}</label>
+        <label class="check-row"><input id="soundsEnabled" type="checkbox" ${settings.soundsEnabled ? "checked" : ""}> ${COPY.settings.sounds}</label>
+        <label class="check-row"><input id="publicLobby" type="checkbox" ${settings.publicLobby ? "checked" : ""}> ${COPY.settings.publicLobby}</label>
+      </div>
+      <div class="settings-editor-actions">
+        <button class="btn primary compact-btn" data-action="save-lobby-settings">${COPY.buttons.saveSettings}</button>
+        <button class="btn ghost compact-btn" data-action="toggle-settings">${COPY.buttons.cancelSettings}</button>
+      </div>
     </div>
   `;
 }
 
 function settingsSummary(room) {
-  const promptMode = room.settings.promptMode === "auto" ? "сервер кидает начала" : "свои начала от игроков";
-  const assignmentMode = room.settings.assignmentMode === "same" ? "одна фраза для всех" : "каждому чужая фраза";
-  const anonymous = room.settings.anonymousMode ? "авторы скрыты до суда" : "авторы палятся сразу";
+  const promptMode = room.settings.promptMode === "auto" ? "Игра предлагает начала" : "Свои начала от игроков";
+  const assignmentMode = room.settings.assignmentMode === "same" ? "все добивают одну фразу" : "каждый добивает чужую фразу";
   return `
     <ul class="settings-list">
-      <li>${room.maxRounds} раундов, максимум игроков: ${room.settings.maxPlayers}</li>
-      <li>${promptMode}, ${assignmentMode}, ${anonymous}</li>
-      <li>Таймеры: начало ${room.timers.promptSeconds}с, концовка ${room.timers.answerSeconds}с, голосование ${room.timers.voteSeconds}с</li>
+      <li>${room.maxRounds} раундов · максимум игроков: ${room.settings.maxPlayers}</li>
+      <li>${promptMode} · ${assignmentMode}</li>
+      <li>Таймеры: начало ${room.timers.promptSeconds}с · концовка ${room.timers.answerSeconds}с · голосование ${room.timers.voteSeconds}с</li>
     </ul>
   `;
 }
@@ -432,8 +769,13 @@ function playersHtml() {
     <div class="players">
       ${currentRoom.players.map((player) => `
         <div class="pill ${player.connected ? "" : "disconnected"}">
-          <span>${escapeHtml(player.name)} ${player.id === currentRoom.hostId ? '<span class="badge">хост</span>' : ""}</span>
-          <span>${player.connected ? "в комнате" : "отключился"}</span>
+          <span class="player-name">
+            <span class="avatar">${escapeHtml(getInitial(player.name))}</span>
+            ${escapeHtml(player.name)}
+            ${player.id === getMyId() ? `<button class="name-edit-inline" data-action="edit-name">Изменить ник</button>` : ""}
+            ${player.id === currentRoom.hostId ? '<span class="badge">хост</span>' : ""}
+          </span>
+          <span class="player-status">${player.connected ? "в лобби" : "отключился"}</span>
         </div>
       `).join("")}
     </div>
@@ -442,42 +784,79 @@ function playersHtml() {
 
 function renderWaiting() {
   const onlineCount = currentRoom.players.filter((player) => player.connected).length;
+  const link = inviteLink(currentRoom.code);
+  app.classList.add("waiting-room-card");
   app.innerHTML = `
-    <h2 class="panel-title">${COPY.screens.waiting}</h2>
-    <div class="lobby-bento">
-      <section class="bento-card access-card">
-        <span class="bento-kicker">код приглашения</span>
-        <div class="room-code">${currentRoom.code}</div>
-        <div class="lobby-count">В лобби: ${onlineCount} из ${currentRoom.settings.maxPlayers}</div>
-        <button class="btn ghost" data-action="copy-code">${COPY.buttons.copyCode}</button>
+    <div class="lobby-shell waiting-room">
+      <header class="waiting-header">
+        <h2 class="panel-title">${COPY.screens.waiting}</h2>
+      </header>
+
+      <section class="invite-panel">
+        <div class="invite-code-block">
+          <span class="bento-kicker">Код лобби</span>
+          <span class="room-code">${currentRoom.code}</span>
+          <p class="meta">Друг может войти по коду или по ссылке.</p>
+        </div>
+        <div class="invite-link-block">
+          <div class="section-row">
+            <span class="bento-kicker">Ссылка для друзей</span>
+            <span class="lobby-count">${onlineCount}/${currentRoom.settings.maxPlayers}</span>
+          </div>
+          <div class="invite-url">${escapeHtml(link)}</div>
+          <div class="actions invite-actions">
+            <button class="btn primary compact-btn" data-action="copy-invite-link">${COPY.buttons.copyInvite}</button>
+            <button class="btn ghost compact-btn" data-action="copy-code">${COPY.buttons.copyCode}</button>
+          </div>
+        </div>
       </section>
 
-      <section class="bento-card players-card">
-        <h3 class="section-title">${COPY.labels.players}</h3>
-        ${playersHtml()}
-      </section>
+      <div class="waiting-grid">
+        <section class="bento-card players-card lobby-players-card waiting-players">
+          <div class="section-row">
+            <h3 class="section-title">${COPY.labels.players}</h3>
+            <span class="lobby-count">${onlineCount}/${currentRoom.settings.maxPlayers}</span>
+          </div>
+          ${playersHtml()}
+          ${onlineCount < currentRoom.settings.maxPlayers ? `<p class="meta wait-hint">Ждём остальных игроков…</p>` : ""}
+        </section>
 
-      <section class="bento-card settings-card">
-        <h3 class="section-title">${COPY.labels.settings}</h3>
-        ${settingsSummary(currentRoom)}
-      </section>
-
-      <section class="bento-card host-card">
-        <span class="bento-kicker">control room</span>
-        <p class="meta">Хост запускает игру, когда все готовы.</p>
-        ${isHost() ? `<button class="btn primary" data-action="start-game">${COPY.buttons.startGame}</button>` : `<p class="prompt-box">${COPY.messages.hostDecision}</p>`}
-      </section>
+        <aside class="waiting-side">
+          <section class="bento-card settings-card lobby-settings-card compact-settings-card">
+            <div class="section-row">
+              <h3 class="section-title">${COPY.labels.settings}</h3>
+              ${isHost() ? `<button class="btn ghost compact-btn" data-action="toggle-settings">${COPY.buttons.editSettings}</button>` : ""}
+            </div>
+            ${settingsSummary(currentRoom)}
+          </section>
+        </aside>
+      </div>
     </div>
   `;
+  if (isHost() && lobbySettingsOpen) renderSettingsModal();
 }
 
 function roomControlsHtml() {
   if (!currentRoom) return "";
+  const onlineCount = currentRoom.players.filter((player) => player.connected).length;
+  const showLeaveButton = !(currentRoom.state === "waiting" && onlineCount <= 1);
+  const waitingHostControls = currentRoom.state === "waiting" && isHost()
+    ? `<button class="btn primary" data-action="start-game">${COPY.buttons.startGame}</button>`
+    : "";
+  const waitingGuestNote = currentRoom.state === "waiting" && !isHost()
+    ? `<span class="meta room-controls-note">${COPY.messages.hostDecision}</span>`
+    : "";
 
   return `
     <div class="room-controls">
-      <button class="btn ghost danger-lite" data-action="leave-room">${COPY.buttons.leaveRoom}</button>
-      ${isHost() ? `<button class="btn danger" data-action="delete-room">${COPY.buttons.deleteRoom}</button>` : ""}
+      <div class="room-controls-left">
+        ${waitingHostControls}
+        ${waitingGuestNote}
+      </div>
+      <div class="room-controls-right">
+        ${showLeaveButton ? `<button class="btn ghost danger-lite" data-action="leave-room">${COPY.buttons.leaveRoom}</button>` : ""}
+        ${isHost() ? `<button class="btn danger" data-action="delete-room">${COPY.buttons.deleteRoom}</button>` : ""}
+      </div>
     </div>
   `;
 }
@@ -649,7 +1028,7 @@ function renderFinished() {
   const winner = [...currentRoom.players].sort((a, b) => b.score - a.score)[0];
   app.innerHTML = `
     <h2 class="panel-title">${COPY.screens.finished}</h2>
-    <div class="prompt-box">Победитель: ${escapeHtml(winner?.name || COPY.empty.winnerMissing)} · титул: Главный клоун комнаты</div>
+    <div class="prompt-box">Победитель: ${escapeHtml(winner?.name || COPY.empty.winnerMissing)} · титул: Главный клоун лобби</div>
     ${scoresHtml()}
     <h3 class="section-title">${COPY.labels.titles}</h3>
     <div class="titles">
@@ -669,9 +1048,28 @@ function renderFinished() {
 }
 
 function render() {
+  if (!currentRoom || currentRoom.state !== "waiting" || !lobbySettingsOpen) {
+    closeSettingsModal();
+  }
+  app.classList.remove("plain-menu-card", "code-join-card", "server-list-card", "create-game-card", "waiting-room-card");
+  document.body.classList.toggle("home-screen", !currentRoom && currentScreen === "home");
+  document.body.classList.toggle(
+    "simple-screen",
+    !currentRoom && ["home", "join", "code", "create", "lobbies", "invite", "inviteBlocked", "lobbyMissing", "notFound"].includes(currentScreen)
+  );
+  document.body.classList.toggle("waiting-screen", Boolean(currentRoom && currentRoom.state === "waiting"));
   if (!currentRoom) {
     if (currentScreen === "create") renderCreateRoom();
+    else if (currentScreen === "join") renderJoinMenu();
     else if (currentScreen === "lobbies") renderLobbyBrowser();
+    else if (currentScreen === "code") renderCodeJoin();
+    else if (currentScreen === "invite") {
+      renderInviteJoin();
+      setTimeout(requestInviteJoin, 0);
+    }
+    else if (currentScreen === "inviteBlocked") renderInviteBlocked();
+    else if (currentScreen === "lobbyMissing") renderLobbyMissing();
+    else if (currentScreen === "notFound") renderNotFound();
     else renderHome();
     restartScreenAnimation();
     return;
@@ -705,68 +1103,145 @@ function readName() {
 
 function readSettings() {
   return {
-    maxRounds: document.getElementById("maxRounds").value,
-    promptSeconds: document.getElementById("promptSeconds").value,
-    answerSeconds: document.getElementById("answerSeconds").value,
-    voteSeconds: document.getElementById("voteSeconds").value,
-    anonymousMode: document.getElementById("anonymousMode").checked,
-    soundsEnabled: document.getElementById("soundsEnabled").checked,
-    promptMode: document.getElementById("promptMode").value,
-    assignmentMode: document.getElementById("assignmentMode").value,
-    maxPlayers: document.getElementById("maxPlayers").value,
-    publicLobby: document.getElementById("publicLobby").checked
+    maxRounds: document.getElementById("maxRounds")?.value ?? DEFAULT_ROOM_SETTINGS.maxRounds,
+    promptSeconds: document.getElementById("promptSeconds")?.value ?? DEFAULT_ROOM_SETTINGS.promptSeconds,
+    answerSeconds: document.getElementById("answerSeconds")?.value ?? DEFAULT_ROOM_SETTINGS.answerSeconds,
+    voteSeconds: document.getElementById("voteSeconds")?.value ?? DEFAULT_ROOM_SETTINGS.voteSeconds,
+    anonymousMode: document.getElementById("anonymousMode")?.checked ?? DEFAULT_ROOM_SETTINGS.anonymousMode,
+    soundsEnabled: document.getElementById("soundsEnabled")?.checked ?? DEFAULT_ROOM_SETTINGS.soundsEnabled,
+    promptMode: document.getElementById("promptMode")?.value ?? DEFAULT_ROOM_SETTINGS.promptMode,
+    assignmentMode: document.getElementById("assignmentMode")?.value ?? DEFAULT_ROOM_SETTINGS.assignmentMode,
+    maxPlayers: document.getElementById("maxPlayers")?.value ?? DEFAULT_ROOM_SETTINGS.maxPlayers,
+    publicLobby: document.getElementById("publicLobby")?.checked ?? DEFAULT_ROOM_SETTINGS.publicLobby
   };
 }
 
-app.addEventListener("click", (event) => {
+document.addEventListener("click", (event) => {
   const button = event.target.closest("[data-action]");
+  const routeButton = event.target.closest("[data-route]");
+  const clickable = event.target.closest("button, [role='button'], .open-room");
+
+  const action = button?.dataset.action;
+  const isDisabled =
+    clickable?.disabled ||
+    clickable?.getAttribute?.("aria-disabled") === "true";
+
+  const actionsWithOwnSound = [
+    "copy-code",
+    "copy-invite-link",
+    "copy-joke",
+    "copy-best",
+    "copy-history",
+
+    "create-room",
+    "join-room",
+    "join-open-room",
+    "join-invite",
+
+    "vote",
+    "leave-room",
+    "delete-room"
+  ];
+
+  const shouldPlayGenericClick =
+    clickable &&
+    !isDisabled &&
+    !actionsWithOwnSound.includes(action);
+
+  if (shouldPlayGenericClick) {
+    playSound("click");
+  }
+
+  if (routeButton) {
+    const targetScreen = routeButton.dataset.route;
+    navigateTo(targetScreen);
+    return;
+  }
+
   if (!button) return;
 
-  const action = button.dataset.action;
-
   if (action === "home") {
-    currentScreen = "home";
-    render();
+    navigateTo("home");
   }
 
   if (action === "open-create") {
-    if (!readName()) return showToast(COPY.messages.enterName);
-    currentScreen = "create";
-    render();
+    navigateTo("create");
   }
 
   if (action === "open-lobbies") {
-    readName();
-    currentScreen = "lobbies";
-    socket.emit("listOpenRooms");
-    render();
+    navigateTo("lobbies");
   }
 
   if (action === "refresh-lobbies") {
-    readName();
-    socket.emit("listOpenRooms");
-    showToast("Список лобби обновляется.");
+    requestOpenRooms();
+    render();
   }
 
   if (action === "create-room") {
-    socket.emit("createRoom", { name: myName, sessionId, settings: readSettings() });
+    ensureNameThen(() => {
+      socket.emit("createRoom", { name: myName, sessionId, settings: readSettings() });
+    });
+  }
+
+  if (action === "toggle-settings") {
+    lobbySettingsOpen = !lobbySettingsOpen;
+    if (lobbySettingsOpen) renderSettingsModal();
+    else closeSettingsModal();
+  }
+
+  if (action === "save-lobby-settings") {
+    socket.emit("updateRoomSettings", { settings: readSettings() });
+    closeSettingsModal();
   }
 
   if (action === "join-room") {
-    const name = readName();
-    const code = document.getElementById("roomCodeInput").value.trim();
-    if (!name) return showToast(COPY.messages.enterName);
+    const code = document.getElementById("roomCodeInput")?.value.trim();
     if (!code) return showToast(COPY.messages.enterCode);
-    socket.emit("joinRoom", { name, code, sessionId });
+    ensureNameThen(() => {
+      socket.emit("joinRoom", { name: myName, code, sessionId });
+    });
   }
 
   if (action === "join-open-room") {
-    const name = readName();
-    if (!name) return showToast(COPY.messages.enterName);
-    socket.emit("joinRoom", { name, code: button.dataset.roomCode, sessionId });
+    const code = button.dataset.roomCode;
+    ensureNameThen(() => {
+      socket.emit("joinRoom", { name: myName, code, sessionId });
+    });
   }
 
-  if (action === "copy-code") copyText(currentRoom.code);
+  if (action === "join-invite") {
+    inviteJoinRequestedFor = null;
+    requestInviteJoin();
+  }
+
+  if (action === "confirm-name") {
+    const input = document.getElementById("modalNameInput");
+    const nextName = input?.value.trim();
+    if (!nextName) return showToast(COPY.messages.enterName);
+    myName = nextName;
+    localStorage.setItem(STORAGE_KEYS.playerName, myName);
+    const actionToRun = pendingNameAction;
+    closeNameModal();
+    actionToRun?.();
+  }
+
+  if (action === "cancel-name") {
+    closeNameModal();
+  }
+
+  if (action === "edit-name") {
+    pendingNameAction = () => {
+      socket.emit("updateName", { name: myName });
+    };
+    renderNameModal({
+      title: "Сменить ник",
+      note: "Новое имя сразу увидят игроки в лобби.",
+      buttonText: "Сохранить"
+    });
+  }
+
+  if (action === "copy-code") copyWithButtonFeedback(currentRoom.code, button);
+  if (action === "copy-invite-link") copyWithButtonFeedback(inviteLink(currentRoom.code), button);
   if (action === "start-game") socket.emit("startGame");
 
   if (action === "submit-prompt") {
@@ -780,6 +1255,7 @@ app.addEventListener("click", (event) => {
   if (action === "start-voting") socket.emit("startVoting");
 
   if (action === "vote") {
+    playSound("vote");
     socket.emit("submitVote", { answerId: button.dataset.answerId });
   }
 
@@ -821,16 +1297,19 @@ function returnHomeFromRoom(message) {
   currentRoom = null;
   previousState = null;
   currentScreen = "home";
+  routeRoomCode = null;
+  inviteJoinRequestedFor = null;
+  setRoute(ROUTES.home, { replace: true });
   if (message) showToast(message);
   render();
 }
 
 socket.on("connect", () => {
   showToast(COPY.messages.connected);
-  socket.emit("listOpenRooms");
+  requestOpenRooms();
   const savedCode = localStorage.getItem(STORAGE_KEYS.roomCode);
   const savedName = localStorage.getItem(STORAGE_KEYS.playerName);
-  if (savedCode && savedName) {
+  if (savedCode && savedName && (!routeRoomCode || savedCode === routeRoomCode)) {
     socket.emit("reconnectRoom", {
       code: savedCode,
       name: savedName,
@@ -840,17 +1319,24 @@ socket.on("connect", () => {
 });
 
 socket.on("roomCreated", ({ code, sessionId: nextSessionId }) => {
+  lobbySettingsOpen = false;
   rememberSession(code, nextSessionId);
+  playSound("join");
+  setRoute(`/lobby/${code}`);
   showToast(COPY.messages.roomCreated(code));
 });
 
 socket.on("joinedRoom", ({ code, sessionId: nextSessionId, reconnected }) => {
+  lobbySettingsOpen = false;
   rememberSession(code, nextSessionId);
+  playSound("join");
+  setRoute(`/lobby/${code}`, { replace: currentScreen === "invite" });
   showToast(reconnected ? COPY.messages.reconnected(code) : COPY.messages.joined(code));
 });
 
 socket.on("rejoinedRoom", ({ code, sessionId: nextSessionId }) => {
   rememberSession(code, nextSessionId);
+  playSound("join");
   showToast(COPY.messages.returned(code));
 });
 
@@ -860,6 +1346,7 @@ socket.on("sessionExpired", () => {
 
 socket.on("roomUpdate", (room) => {
   currentRoom = room;
+  setRoute(pathForRoom(room), { replace: true });
 
   if (previousState !== room.state) {
     if (room.state === "revealing") playRevealSound();
@@ -871,6 +1358,36 @@ socket.on("roomUpdate", (room) => {
 });
 
 socket.on("errorMessage", (message) => {
+  playSound("error");
+
+  const normalized = String(message || "").toLowerCase();
+
+  if (normalized.includes("игра уже началась")) {
+    currentRoom = null;
+    previousState = null;
+    currentScreen = "inviteBlocked";
+    setRoute("/game-started", { replace: true });
+    render();
+    return;
+  }
+
+  if (
+    normalized.includes("лобби не найден") ||
+    normalized.includes("комната не найдена") ||
+    normalized.includes("room not found") ||
+    normalized.includes("not found")
+  ) {
+    clearSavedRoom();
+    currentRoom = null;
+    previousState = null;
+    currentScreen = "lobbyMissing";
+    routeRoomCode = null;
+    inviteJoinRequestedFor = null;
+    setRoute("/lobby-not-found", { replace: true });
+    render();
+    return;
+  }
+
   showToast(message);
 });
 
@@ -879,6 +1396,11 @@ socket.on("roomNotice", ({ message }) => {
 });
 
 socket.on("openRoomsUpdate", (rooms) => {
+  openRoomsLoading = false;
+  if (openRoomsTimer) {
+    clearTimeout(openRoomsTimer);
+    openRoomsTimer = null;
+  }
   openRooms = rooms || [];
   if (!currentRoom && currentScreen === "lobbies") {
     render();
@@ -886,15 +1408,32 @@ socket.on("openRoomsUpdate", (rooms) => {
 });
 
 socket.on("leftRoom", () => {
+  playSound("leave");
   returnHomeFromRoom(COPY.messages.leftRoom);
 });
 
 socket.on("roomDeleted", ({ message } = {}) => {
+  playSound("leave");
   returnHomeFromRoom(message || COPY.messages.roomDeleted);
 });
 
 socket.on("disconnect", () => {
   showToast(COPY.messages.disconnected);
 });
+
+window.addEventListener("popstate", () => {
+  currentScreen = screenFromPath(location.pathname);
+  routeRoomCode = roomCodeFromPath(location.pathname);
+  inviteJoinRequestedFor = null;
+  if (currentRoom) {
+    setRoute(pathForRoom(currentRoom), { replace: true });
+    render();
+    return;
+  }
+  if (!currentRoom && currentScreen === "lobbies") requestOpenRooms();
+  render();
+});
+
+if (currentScreen === "lobbies") requestOpenRooms();
 
 render();

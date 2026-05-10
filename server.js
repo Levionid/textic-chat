@@ -19,6 +19,9 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
+app.get("*", (request, response) => {
+  response.sendFile(path.join(__dirname, "public", "index.html"));
+});
 
 const io = new Server(server, {
   cors: {
@@ -74,13 +77,13 @@ const COPY = {
     "Самый стабильный модуль проекта - это...",
     "Когда тесты прошли, но стало только страшнее...",
     "Если бы бессонница умела писать JavaScript...",
-    "Когда хост копирует код комнаты как секретный архив..."
+    "Когда хост копирует код лобби как секретный архив..."
   ],
   errors: {
-    hostOnly: "Это может сделать только хост комнаты.",
-    emptyName: "Без ника нельзя, сервер не умеет читать мысли.",
-    roomMissing: "Такой комнаты нет. Либо код кривой, либо лобби ушло в закат.",
-    gameStarted: "Игра уже началась. Новых игроков пока добавить нельзя.",
+    hostOnly: "Это может сделать только хост лобби.",
+    emptyName: "Введите ник",
+    roomMissing: "Лобби не найдено",
+    gameStarted: "Игра уже началась. Новых игроков больше нельзя добавить в это лобби.",
     roomFull: "Лобби уже забито. Стульев больше нет.",
     minPlayers: "Нужно минимум 2 игрока.",
     emptyPrompt: "Напишите начало фразы.",
@@ -92,12 +95,12 @@ const COPY = {
   fallbackAnswer: "не успел придумать смешную концовку",
   fallbackPlayer: "аноним из оперативки",
   notices: {
-    joined: (name) => `${name} присоединился к комнате.`,
-    returned: (name) => `${name} вернулся в комнату.`,
-    hostChanged: (name) => `${name} теперь хост комнаты.`,
+    joined: (name) => `${name} присоединился к лобби.`,
+    returned: (name) => `${name} вернулся в лобби.`,
+    hostChanged: (name) => `${name} теперь хост лобби.`,
     disconnected: (name) => `${name} отключился.`,
-    left: (name) => `${name} вышел из комнаты.`,
-    deleted: "Хост удалил комнату."
+    left: (name) => `${name} вышел из лобби.`,
+    deleted: "Хост удалил лобби."
   },
   titles: [
     { title: "Машина юмора", note: "набрал больше всех очков" },
@@ -731,6 +734,37 @@ io.on("connection", (socket) => {
 
   socket.on("listOpenRooms", () => {
     socket.emit("openRoomsUpdate", getOpenRooms());
+  });
+
+  socket.on("updateRoomSettings", ({ settings } = {}) => {
+    const room = rooms[socket.data.roomCode];
+    if (!ensureHost(socket, room)) return;
+    if (room.state !== "waiting") return;
+
+    const normalized = normalizeSettings(settings);
+    const connectedCount = getConnectedPlayers(room).length;
+    normalized.settings.maxPlayers = Math.max(normalized.settings.maxPlayers, connectedCount, 2);
+
+    room.maxRounds = normalized.maxRounds;
+    room.timers = normalized.timers;
+    room.settings = normalized.settings;
+    emitRoom(room);
+    emitOpenRooms();
+  });
+
+  socket.on("updateName", ({ name } = {}) => {
+    const room = rooms[socket.data.roomCode];
+    const playerId = socket.data.playerId;
+    const cleanName = cleanText(name, 32);
+    if (!cleanName) return emitError(socket, COPY.errors.emptyName);
+    if (!room || !playerId) return emitError(socket, COPY.errors.roomMissing);
+
+    const player = room.players.find((item) => item.id === playerId);
+    if (!player) return emitError(socket, COPY.errors.roomMissing);
+
+    player.name = cleanName;
+    emitRoom(room);
+    emitOpenRooms();
   });
 
   socket.on("reconnectRoom", ({ code, name, sessionId } = {}) => {
