@@ -226,6 +226,7 @@ const audioDrafts = {
 let promptEditMode = false;
 let answerEditMode = false;
 let activeRecording = null;
+let recordingTicker = null;
 let historyOpen = false;
 let serverTimeOffset = 0;
 
@@ -533,18 +534,28 @@ async function fileToAudioPayload(file, fallbackName = "voice.webm") {
   };
 }
 
+function formatAudioTime(seconds) {
+  const safe = Math.max(0, Math.floor(Number(seconds) || 0));
+  const minutes = Math.floor(safe / 60);
+  const rest = String(safe % 60).padStart(2, "0");
+  return `${minutes}:${rest}`;
+}
+
+function voiceBarsHtml(count = 36) {
+  return Array.from({ length: count }, (_, index) => `<span style="--i:${index}"></span>`).join("");
+}
+
 function audioPlayerHtml(audio, { compact = false } = {}) {
   if (!audio?.dataUrl) return "";
-  const label = audio.name || "Голосовое";
   const safeSrc = escapeHtml(audio.dataUrl);
-  const bars = Array.from({ length: 18 }, (_, index) => `<span style="--i:${index}"></span>`).join("");
+  const bars = voiceBarsHtml(compact ? 24 : 38);
   return `
     <div class="voice-message ${compact ? "voice-message-compact" : ""}">
       <button class="voice-play" type="button" data-action="toggle-audio" aria-label="Воспроизвести аудио">▶</button>
       <div class="voice-body">
         <div class="voice-wave" aria-hidden="true">${bars}</div>
         <div class="voice-meta-row">
-          <span class="voice-title">${escapeHtml(label)}</span>
+          <span class="voice-time">0:00 / 0:00</span>
           <span class="voice-kind">голосовое</span>
         </div>
       </div>
@@ -571,10 +582,16 @@ function audioInputHtml(type) {
           ${audioPlayerHtml(audio)}
           <button class="inline-edit audio-remove-link" data-action="remove-audio-${type}" type="button">${COPY.buttons.removeAudio}</button>
         </div>
+      ` : isRecording ? `
+        <div class="recording-preview" aria-live="polite">
+          <div class="recording-dot"></div>
+          <div class="recording-wave" aria-hidden="true">${voiceBarsHtml(42)}</div>
+          <span class="recording-time" data-recording-time>0:00</span>
+        </div>
       ` : `
         <div class="audio-empty-card">
           <span class="audio-empty-icon">🎙</span>
-          <span>${isRecording ? "Идёт запись… нажмите «Остановить»." : "Аудио пока не добавлено"}</span>
+          <span>Аудио пока не добавлено</span>
         </div>
       `}
       <div class="audio-tool-actions">
@@ -627,6 +644,7 @@ async function startAudioRecording(type) {
       const ext = recordingExtensionFromMime(displayType);
       const fileName = `voice-${Date.now()}.${ext}`;
       activeRecording = null;
+      stopRecordingTicker();
       try {
         const payload = await fileToAudioPayload(new File([blob], fileName, { type: displayType }), fileName);
         setAudioDraft(type, payload);
@@ -637,13 +655,33 @@ async function startAudioRecording(type) {
       render();
     });
 
-    activeRecording = { type, recorder, stream };
+    activeRecording = { type, recorder, stream, startedAt: Date.now() };
     recorder.start();
     showToast(COPY.messages.recordingStarted);
     render();
+    startRecordingTicker();
   } catch (error) {
     showToast(COPY.messages.micDenied);
   }
+}
+
+function updateRecordingTimer() {
+  if (!activeRecording?.startedAt) return;
+  const elapsed = (Date.now() - activeRecording.startedAt) / 1000;
+  document.querySelectorAll("[data-recording-time]").forEach((node) => {
+    node.textContent = formatAudioTime(elapsed);
+  });
+}
+
+function startRecordingTicker() {
+  if (recordingTicker) clearInterval(recordingTicker);
+  updateRecordingTimer();
+  recordingTicker = setInterval(updateRecordingTimer, 250);
+}
+
+function stopRecordingTicker() {
+  if (recordingTicker) clearInterval(recordingTicker);
+  recordingTicker = null;
 }
 
 function stopAudioRecording() {
@@ -651,6 +689,31 @@ function stopAudioRecording() {
   if (activeRecording.recorder.state !== "inactive") {
     activeRecording.recorder.stop();
   }
+}
+
+function updateVoiceMessageTime(voice, audio) {
+  if (!voice || !audio) return;
+  const timeNode = voice.querySelector(".voice-time");
+  if (!timeNode) return;
+  const current = formatAudioTime(audio.currentTime || 0);
+  const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? formatAudioTime(audio.duration) : "0:00";
+  timeNode.textContent = `${current} / ${duration}`;
+}
+
+function initializeVoiceMessages() {
+  document.querySelectorAll(".voice-message").forEach((voice) => {
+    const audio = voice.querySelector("audio");
+    if (!audio || audio.dataset.boundVoiceUi === "1") {
+      if (audio) updateVoiceMessageTime(voice, audio);
+      return;
+    }
+
+    audio.dataset.boundVoiceUi = "1";
+    audio.addEventListener("loadedmetadata", () => updateVoiceMessageTime(voice, audio));
+    audio.addEventListener("timeupdate", () => updateVoiceMessageTime(voice, audio));
+    audio.addEventListener("durationchange", () => updateVoiceMessageTime(voice, audio));
+    updateVoiceMessageTime(voice, audio);
+  });
 }
 
 function clearDraftForState(state, room = currentRoom) {
@@ -1578,6 +1641,8 @@ function render() {
     clearRoomControlsRoot();
     restartScreenAnimation();
     restoreTypingFocus(focusState);
+    initializeVoiceMessages();
+    updateRecordingTimer();
     return;
   }
 
@@ -1594,6 +1659,8 @@ function render() {
   startTimerView();
   restartScreenAnimation();
   restoreTypingFocus(focusState);
+  initializeVoiceMessages();
+  updateRecordingTimer();
 }
 
 function restartScreenAnimation() {
@@ -1676,6 +1743,14 @@ document.addEventListener("click", (event) => {
     "join-open-room",
     "join-invite",
 
+    "toggle-audio",
+    "start-recording-prompt",
+    "stop-recording-prompt",
+    "start-recording-answer",
+    "stop-recording-answer",
+    "remove-audio-prompt",
+    "remove-audio-answer",
+
     "vote",
     "leave-room",
     "delete-room"
@@ -1713,19 +1788,23 @@ document.addEventListener("click", (event) => {
       audio.play().then(() => {
         button.textContent = "Ⅱ";
         voice.classList.add("is-playing");
+        updateVoiceMessageTime(voice, audio);
       }).catch(() => showToast(COPY.messages.audioUnsupported));
       audio.onended = () => {
         button.textContent = "▶";
         voice.classList.remove("is-playing");
+        updateVoiceMessageTime(voice, audio);
       };
       audio.onpause = () => {
         button.textContent = "▶";
         voice.classList.remove("is-playing");
+        updateVoiceMessageTime(voice, audio);
       };
     } else {
       audio.pause();
       button.textContent = "▶";
       voice.classList.remove("is-playing");
+      updateVoiceMessageTime(voice, audio);
     }
     return;
   }
