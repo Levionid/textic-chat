@@ -424,16 +424,6 @@ function startGameCountdown(room) {
   room.timerHandle = setTimeout(() => {
     const latest = rooms[room.code];
     if (!latest || latest.state !== "starting") return;
-
-    if (getConnectedPlayers(latest).length < 2) {
-      latest.state = "waiting";
-      latest.timerEndsAt = null;
-      clearRoomTimer(latest);
-      emitRoom(latest);
-      emitOpenRooms();
-      return;
-    }
-
     startRound(latest);
   }, 5150);
   emitRoom(room);
@@ -814,7 +804,6 @@ io.on("connection", (socket) => {
   socket.on("startGame", () => {
     const room = rooms[socket.data.roomCode];
     if (!ensureHost(socket, room)) return;
-    if (room.state !== "waiting") return;
     if (getConnectedPlayers(room).length < 2) {
       return emitError(socket, COPY.errors.minPlayers);
     }
