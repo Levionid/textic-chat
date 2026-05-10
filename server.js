@@ -17,13 +17,14 @@ app.use(cors({
   origin: ALLOWED_ORIGINS,
   methods: ["GET", "POST"]
 }));
-app.use(express.json());
+app.use(express.json({ limit: "25mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 app.get("*", (request, response) => {
   response.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
 const io = new Server(server, {
+  maxHttpBufferSize: 25 * 1024 * 1024,
   cors: {
     origin: ALLOWED_ORIGINS,
     methods: ["GET", "POST"]
@@ -86,8 +87,10 @@ const COPY = {
     gameStarted: "Игра уже началась. Новых игроков больше нельзя добавить в это лобби.",
     roomFull: "Лобби уже забито. Стульев больше нет.",
     minPlayers: "Нужно минимум 2 игрока.",
-    emptyPrompt: "Напишите начало фразы.",
-    emptyAnswer: "Напишите концовку.",
+    emptyPrompt: "Напишите начало фразы или добавьте аудио.",
+    emptyAnswer: "Напишите концовку или добавьте аудио.",
+    audioTooLarge: "Аудио должно быть не больше 20 МБ.",
+    audioUnsupported: "Неподдерживаемый аудиофайл.",
     noAssignment: "Вам еще не выдана фраза. Попробуйте обновить страницу.",
     jokeMissing: "Шутка не найдена.",
     selfVote: "За себя голосовать нельзя. Даже если ты гений."
@@ -122,6 +125,21 @@ const COPY = {
 const rooms = {};
 const PROMPT_MAX_LENGTH = 160;
 const ANSWER_MAX_LENGTH = 180;
+const AUDIO_MAX_BYTES = 20 * 1024 * 1024;
+const ALLOWED_AUDIO_TYPES = new Set([
+  "audio/mpeg",
+  "audio/mp3",
+  "audio/wav",
+  "audio/wave",
+  "audio/x-wav",
+  "audio/ogg",
+  "audio/webm",
+  "audio/mp4",
+  "audio/aac",
+  "audio/x-m4a",
+  "audio/flac",
+  "audio/x-flac"
+]);
 const RECONNECT_GRACE_MS = 6000;
 
 function clampNumber(value, min, max, fallback) {
@@ -132,6 +150,41 @@ function clampNumber(value, min, max, fallback) {
 
 function cleanText(value, maxLength = 220) {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, maxLength);
+}
+
+function estimateBase64Bytes(base64) {
+  const clean = String(base64 || "").replace(/=+$/, "");
+  return Math.floor((clean.length * 3) / 4);
+}
+
+function cleanAudio(raw) {
+  if (!raw) return { audio: null };
+
+  const name = cleanText(raw.name, 120) || "voice.webm";
+  const type = String(raw.type || "audio/webm").toLowerCase().split(";")[0];
+  const dataUrl = String(raw.dataUrl || "");
+  const match = dataUrl.match(/^data:([^;,]+);base64,([a-zA-Z0-9+/=]+)$/);
+
+  if (!match) return { error: COPY.errors.audioUnsupported };
+
+  const dataType = match[1].toLowerCase();
+  const base64 = match[2];
+  const bytes = Math.max(Number(raw.size) || 0, estimateBase64Bytes(base64));
+
+  const allowedByType = ALLOWED_AUDIO_TYPES.has(type) || ALLOWED_AUDIO_TYPES.has(dataType) || type.startsWith("audio/") || dataType.startsWith("audio/");
+  const allowedByName = /\.(mp3|wav|ogg|webm|m4a|aac|flac)$/i.test(name);
+
+  if (!allowedByType && !allowedByName) return { error: COPY.errors.audioUnsupported };
+  if (bytes > AUDIO_MAX_BYTES) return { error: COPY.errors.audioTooLarge };
+
+  return {
+    audio: {
+      name,
+      type: ALLOWED_AUDIO_TYPES.has(type) || type.startsWith("audio/") ? type : dataType,
+      size: bytes,
+      dataUrl
+    }
+  };
 }
 
 function cleanSessionId(value) {
@@ -443,7 +496,8 @@ function buildAssignments(room) {
       prompt = {
         id: makeId("prompt"),
         authorId: null,
-        text: pickAutoPrompt(room.round + Date.now())
+        text: pickAutoPrompt(room.round + Date.now()),
+        audio: null
       };
       room.prompts.push(prompt);
     }
@@ -460,7 +514,8 @@ function buildAssignments(room) {
       const prompt = {
         id: makeId("prompt"),
         authorId: null,
-        text: pickAutoPrompt(room.round + index)
+        text: pickAutoPrompt(room.round + index),
+        audio: null
       };
       room.prompts.push(prompt);
       room.assignments[player.id] = prompt.id;
@@ -483,7 +538,8 @@ function fillMissingPrompts(room) {
       room.prompts.push({
         id: makeId("prompt"),
         authorId: player.id,
-        text: pickAutoPrompt(room.round + index)
+        text: pickAutoPrompt(room.round + index),
+        audio: null
       });
     }
   });
@@ -512,7 +568,8 @@ function fillMissingAnswers(room) {
         id: makeId("answer"),
         promptId: room.assignments[player.id],
         authorId: player.id,
-        text: COPY.fallbackAnswer
+        text: COPY.fallbackAnswer,
+        audio: null
       });
     }
   });
@@ -550,6 +607,11 @@ function getPromptText(room, promptId) {
   return prompt ? prompt.text : "";
 }
 
+function getPromptAudio(room, promptId) {
+  const prompt = room.prompts.find((item) => item.id === promptId);
+  return prompt?.audio || null;
+}
+
 function getPlayerName(room, playerId) {
   const player = room.players.find((item) => item.id === playerId);
   return player ? player.name : COPY.fallbackPlayer;
@@ -578,6 +640,8 @@ function finishVoting(room) {
       answerId: answer.id,
       promptText: getPromptText(room, answer.promptId),
       answerText: answer.text,
+      promptAudio: getPromptAudio(room, answer.promptId),
+      answerAudio: answer.audio || null,
       authorId: answer.authorId,
       authorName: getPlayerName(room, answer.authorId),
       votesCount,
@@ -604,6 +668,8 @@ function finishVoting(room) {
       round: room.round,
       promptText: best.promptText,
       answerText: best.answerText,
+      promptAudio: best.promptAudio || null,
+      answerAudio: best.answerAudio || null,
       authorName: best.authorName,
       votesCount: best.votesCount,
       tied: bestJokes.length > 1
@@ -820,17 +886,20 @@ io.on("connection", (socket) => {
     emitOpenRooms();
   });
 
-  socket.on("submitPrompt", ({ text } = {}) => {
+  socket.on("submitPrompt", ({ text, audio } = {}) => {
     const room = rooms[socket.data.roomCode];
     const playerId = socket.data.playerId;
     if (!room || room.state !== "prompting") return;
 
     const promptText = cleanText(text, PROMPT_MAX_LENGTH);
-    if (!promptText) return emitError(socket, COPY.errors.emptyPrompt);
+    const cleanedAudio = cleanAudio(audio);
+    if (cleanedAudio.error) return emitError(socket, cleanedAudio.error);
+    if (!promptText && !cleanedAudio.audio) return emitError(socket, COPY.errors.emptyPrompt);
 
     const existingPrompt = room.prompts.find((prompt) => prompt.authorId === playerId);
     if (existingPrompt) {
       existingPrompt.text = promptText;
+      existingPrompt.audio = cleanedAudio.audio;
       emitRoom(room);
       return;
     }
@@ -838,7 +907,8 @@ io.on("connection", (socket) => {
     room.prompts.push({
       id: makeId("prompt"),
       authorId: playerId,
-      text: promptText
+      text: promptText,
+      audio: cleanedAudio.audio
     });
 
     if (getConnectedPlayers(room).every((player) => room.prompts.some((prompt) => prompt.authorId === player.id))) {
@@ -848,18 +918,21 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("submitAnswer", ({ text } = {}) => {
+  socket.on("submitAnswer", ({ text, audio } = {}) => {
     const room = rooms[socket.data.roomCode];
     const playerId = socket.data.playerId;
     if (!room || room.state !== "answering") return;
 
     const answerText = cleanText(text, ANSWER_MAX_LENGTH);
-    if (!answerText) return emitError(socket, COPY.errors.emptyAnswer);
+    const cleanedAudio = cleanAudio(audio);
+    if (cleanedAudio.error) return emitError(socket, cleanedAudio.error);
+    if (!answerText && !cleanedAudio.audio) return emitError(socket, COPY.errors.emptyAnswer);
     if (!room.assignments[playerId]) return emitError(socket, COPY.errors.noAssignment);
 
     const existingAnswer = room.answers.find((answer) => answer.authorId === playerId);
     if (existingAnswer) {
       existingAnswer.text = answerText;
+      existingAnswer.audio = cleanedAudio.audio;
       emitRoom(room);
       return;
     }
@@ -868,7 +941,8 @@ io.on("connection", (socket) => {
       id: makeId("answer"),
       promptId: room.assignments[playerId],
       authorId: playerId,
-      text: answerText
+      text: answerText,
+      audio: cleanedAudio.audio
     });
 
     if (getConnectedPlayers(room).every((player) => room.answers.some((answer) => answer.authorId === player.id))) {

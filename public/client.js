@@ -51,6 +51,10 @@ const SOUND_FILES = {
   error: "/sounds/error.mp3"
 };
 
+const MAX_AUDIO_BYTES = 20 * 1024 * 1024;
+const AUDIO_ACCEPT = "audio/*,.mp3,.wav,.ogg,.webm,.m4a,.aac,.flac";
+
+
 const COPY = {
   appTitle: "Добей фразу",
   tagline: "игра для компании друзей",
@@ -84,6 +88,11 @@ const COPY = {
     updatePrompt: "Обновить начало",
     submitAnswer: "Отправить концовку",
     updateAnswer: "Обновить концовку",
+    editSubmission: "Изменить",
+    recordAudio: "Записать голосом",
+    stopRecording: "Остановить",
+    chooseAudio: "Прикрепить аудио",
+    removeAudio: "Убрать аудио",
     startVoting: "Перейти к голосованию",
     vote: "Отдать голос",
     ownAnswer: "Это ваша концовка",
@@ -165,6 +174,13 @@ const COPY = {
     roomsRefreshFailed: "Не получилось обновить список. Попробуйте ещё раз.",
     promptSubmitted: "Начало отправлено. Ждем остальных.",
     answerSubmitted: "Концовка отправлена. Ждем остальных.",
+    audioTooLarge: "Аудио должно быть не больше 20 МБ.",
+    audioUnsupported: "Выберите аудиофайл: mp3, wav, ogg, webm, m4a, aac или flac.",
+    audioReady: "Аудио добавлено.",
+    audioRemoved: "Аудио убрано.",
+    recordingStarted: "Запись началась. Нажмите «Остановить», когда закончите.",
+    micDenied: "Не получилось включить микрофон. Проверьте разрешения браузера.",
+    fileReadFailed: "Не получилось прочитать аудиофайл.",
     voteSubmitted: "Голос принят. Ждем остальных.",
     hostStartsVoting: "Ждем, пока хост запустит голосование.",
     hostDecision: "Хост выбирает следующий шаг.",
@@ -203,6 +219,13 @@ const inputDrafts = {
   prompts: {},
   answers: {}
 };
+const audioDrafts = {
+  prompts: {},
+  answers: {}
+};
+let promptEditMode = false;
+let answerEditMode = false;
+let activeRecording = null;
 let historyOpen = false;
 let serverTimeOffset = 0;
 
@@ -439,12 +462,164 @@ function getAnswerDraft() {
   return getMyAnswer()?.text || "";
 }
 
+function getPromptAudioDraft() {
+  const key = promptDraftKey();
+  if (Object.prototype.hasOwnProperty.call(audioDrafts.prompts, key)) return audioDrafts.prompts[key];
+  return getMyPrompt()?.audio || null;
+}
+
+function getAnswerAudioDraft() {
+  const key = answerDraftKey();
+  if (Object.prototype.hasOwnProperty.call(audioDrafts.answers, key)) return audioDrafts.answers[key];
+  return getMyAnswer()?.audio || null;
+}
+
+function setAudioDraft(type, audio) {
+  const key = type === "prompt" ? promptDraftKey() : answerDraftKey();
+  if (!key) return;
+  if (type === "prompt") audioDrafts.prompts[key] = audio;
+  else audioDrafts.answers[key] = audio;
+}
+
+function getAudioDraft(type) {
+  return type === "prompt" ? getPromptAudioDraft() : getAnswerAudioDraft();
+}
+
+function isAllowedAudioFile(file) {
+  if (!file) return false;
+  const type = String(file.type || "").toLowerCase();
+  const name = String(file.name || "").toLowerCase();
+  return type.startsWith("audio/") || /\.(mp3|wav|ogg|webm|m4a|aac|flac)$/i.test(name);
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("file read failed"));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function fileToAudioPayload(file, fallbackName = "voice.webm") {
+  if (!file) return null;
+  if (file.size > MAX_AUDIO_BYTES) throw new Error("audio-too-large");
+  if (!isAllowedAudioFile(file)) throw new Error("audio-unsupported");
+  const dataUrl = await blobToDataUrl(file);
+  return {
+    name: String(file.name || fallbackName).slice(0, 120),
+    type: file.type || "audio/webm",
+    size: file.size,
+    dataUrl
+  };
+}
+
+function audioPlayerHtml(audio, { compact = false } = {}) {
+  if (!audio?.dataUrl) return "";
+  return `
+    <div class="audio-chip ${compact ? "audio-chip-compact" : ""}">
+      <span class="audio-chip-label">${escapeHtml(audio.name || "Голосовое")}</span>
+      <audio controls preload="metadata" src="${escapeHtml(audio.dataUrl)}"></audio>
+    </div>
+  `;
+}
+
+function audioInputHtml(type) {
+  const audio = getAudioDraft(type);
+  const isRecording = activeRecording?.type === type;
+  const label = type === "prompt" ? "голосовое начало" : "голосовая концовка";
+  return `
+    <div class="audio-tools">
+      <div class="audio-tools-head">
+        <span class="meta">Можно написать текстом, записать голосом или прикрепить аудиофайл до 20 МБ.</span>
+      </div>
+      ${audio ? `
+        <div class="audio-current">
+          ${audioPlayerHtml(audio)}
+          <button class="inline-edit" data-action="remove-audio-${type}" type="button">${COPY.buttons.removeAudio}</button>
+        </div>
+      ` : `<p class="meta audio-empty">Аудио не добавлено.</p>`}
+      <div class="audio-tool-actions">
+        <button class="btn ghost compact-btn" type="button" data-action="${isRecording ? `stop-recording-${type}` : `start-recording-${type}`}">${isRecording ? COPY.buttons.stopRecording : COPY.buttons.recordAudio}</button>
+        <label class="btn ghost compact-btn audio-file-label">
+          ${COPY.buttons.chooseAudio}
+          <input class="sr-only" type="file" accept="${AUDIO_ACCEPT}" data-audio-input="${type}" aria-label="Прикрепить ${label}">
+        </label>
+      </div>
+    </div>
+  `;
+}
+
+async function startAudioRecording(type) {
+  if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+    showToast("Браузер не поддерживает запись с микрофона.");
+    return;
+  }
+
+  if (activeRecording) {
+    stopAudioRecording();
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const preferredTypes = [
+      "audio/webm;codecs=opus",
+      "audio/webm",
+      "audio/ogg;codecs=opus",
+      "audio/mp4"
+    ];
+    const mimeType = preferredTypes.find((item) => MediaRecorder.isTypeSupported?.(item));
+    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    const chunks = [];
+
+    recorder.addEventListener("dataavailable", (event) => {
+      if (event.data?.size) chunks.push(event.data);
+    });
+
+    recorder.addEventListener("stop", async () => {
+      stream.getTracks().forEach((track) => track.stop());
+      const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
+      activeRecording = null;
+      try {
+        const payload = await fileToAudioPayload(new File([blob], `voice-${Date.now()}.webm`, { type: blob.type }), `voice-${Date.now()}.webm`);
+        setAudioDraft(type, payload);
+        showToast(COPY.messages.audioReady);
+      } catch (error) {
+        showToast(error.message === "audio-too-large" ? COPY.messages.audioTooLarge : COPY.messages.fileReadFailed);
+      }
+      render();
+    });
+
+    activeRecording = { type, recorder, stream };
+    recorder.start();
+    showToast(COPY.messages.recordingStarted);
+    render();
+  } catch (error) {
+    showToast(COPY.messages.micDenied);
+  }
+}
+
+function stopAudioRecording() {
+  if (!activeRecording) return;
+  if (activeRecording.recorder.state !== "inactive") {
+    activeRecording.recorder.stop();
+  }
+}
+
 function clearDraftForState(state, room = currentRoom) {
   if (!room) return;
   const promptKey = `${room.code}:${room.round}:${getMyId()}`;
   const answerKey = `${room.code}:${room.round}:${getMyId()}`;
-  if (state !== "prompting") delete inputDrafts.prompts[promptKey];
-  if (state !== "answering") delete inputDrafts.answers[answerKey];
+  if (state !== "prompting") {
+    delete inputDrafts.prompts[promptKey];
+    delete audioDrafts.prompts[promptKey];
+    promptEditMode = false;
+  }
+  if (state !== "answering") {
+    delete inputDrafts.answers[answerKey];
+    delete audioDrafts.answers[answerKey];
+    answerEditMode = false;
+  }
 }
 
 function startTimerView() {
@@ -950,11 +1125,21 @@ function roomControlsHtml() {
   }
 
   if (currentRoom.state === "prompting") {
-    primaryAction = `<button class="btn primary" data-action="submit-prompt">${hasSubmittedPrompt() ? COPY.buttons.updatePrompt : COPY.buttons.submitPrompt}</button>`;
+    const submitted = hasSubmittedPrompt();
+    if (!submitted || promptEditMode) {
+      primaryAction = `<button class="btn primary" data-action="submit-prompt">${submitted ? COPY.buttons.updatePrompt : COPY.buttons.submitPrompt}</button>`;
+    } else {
+      statusNote = `<span class="meta room-controls-note">Начало отправлено. Можно изменить, пока идёт таймер.</span>`;
+    }
   }
 
   if (currentRoom.state === "answering") {
-    primaryAction = `<button class="btn primary" data-action="submit-answer">${hasSubmittedAnswer() ? COPY.buttons.updateAnswer : COPY.buttons.submitAnswer}</button>`;
+    const submitted = hasSubmittedAnswer();
+    if (!submitted || answerEditMode) {
+      primaryAction = `<button class="btn primary" data-action="submit-answer">${submitted ? COPY.buttons.updateAnswer : COPY.buttons.submitAnswer}</button>`;
+    } else {
+      statusNote = `<span class="meta room-controls-note">Концовка отправлена. Можно изменить, пока идёт таймер.</span>`;
+    }
   }
 
   if (currentRoom.state === "revealing") {
@@ -1021,18 +1206,39 @@ function renderStarting() {
   `;
 }
 
+function submittedBlockHtml({ type, text, audio }) {
+  const title = type === "prompt" ? "Начало отправлено" : "Концовка отправлена";
+  const emptyLabel = type === "prompt" ? "Голосовое начало" : "Голосовая концовка";
+  const editAction = type === "prompt" ? "edit-prompt-draft" : "edit-answer-draft";
+  return `
+    <div class="submitted-draft-card">
+      <div class="submitted-draft-top">
+        <span class="submitted-draft-label">${title}</span>
+        <button class="inline-edit" type="button" data-action="${editAction}">${COPY.buttons.editSubmission}</button>
+      </div>
+      <div class="submitted-draft-text">${escapeHtml(text || (audio ? emptyLabel : "Пока пусто"))}</div>
+      ${audioPlayerHtml(audio)}
+    </div>
+  `;
+}
+
 function renderPrompting() {
   const submitted = hasSubmittedPrompt();
+  const myPrompt = getMyPrompt();
   const draft = getPromptDraft();
+  const audio = getPromptAudioDraft();
   const connectedCount = currentRoom.players.filter((p) => p.connected).length;
+  const isEditing = !submitted || promptEditMode;
   app.classList.add("game-stage-card", "compact-game-stage-card");
   app.innerHTML = `
     <div class="game-stage input-stage">
       ${stageTitle(`Раунд ${currentRoom.round} · Кинь начало`)}
-      <section class="stage-panel input-stage-panel">
+      <section class="input-stage-panel no-shell-panel">
         ${timerHtml()}
-        <textarea id="promptInput" maxlength="160" placeholder="${COPY.placeholders.prompt}">${escapeHtml(draft)}</textarea>
-        ${submitted ? `<p class="meta edit-draft-note">Начало уже отправлено. Можно изменить текст и нажать «${COPY.buttons.updatePrompt}», пока идёт таймер.</p>` : ""}
+        ${isEditing ? `
+          <textarea id="promptInput" maxlength="160" placeholder="${COPY.placeholders.prompt}">${escapeHtml(draft)}</textarea>
+          ${audioInputHtml("prompt")}
+        ` : submittedBlockHtml({ type: "prompt", text: myPrompt?.text || "", audio: myPrompt?.audio || null })}
         <div class="progress-card">
           <h3 class="section-title">${COPY.labels.progress}</h3>
           <p class="meta">${currentRoom.prompts.length} из ${connectedCount} кинули начало. ${randomWaitingMessage(currentRoom.prompts.length)}</p>
@@ -1044,20 +1250,28 @@ function renderPrompting() {
 
 function renderAnswering() {
   const submitted = hasSubmittedAnswer();
+  const myAnswer = getMyAnswer();
   const promptId = currentRoom.assignments[getMyId()];
   const prompt = getPrompt(promptId);
   const draft = getAnswerDraft();
+  const audio = getAnswerAudioDraft();
   const connectedCount = currentRoom.players.filter((p) => p.connected).length;
+  const isEditing = !submitted || answerEditMode;
 
   app.classList.add("game-stage-card", "compact-game-stage-card");
   app.innerHTML = `
     <div class="game-stage input-stage">
       ${stageTitle("Добей фразу")}
-      <section class="stage-panel input-stage-panel">
+      <section class="input-stage-panel no-shell-panel">
         ${timerHtml()}
-        <div class="prompt-box stage-prompt">${escapeHtml(prompt?.text || COPY.empty.promptMissing)}</div>
-        <textarea id="answerInput" maxlength="180" placeholder="${COPY.placeholders.answer}">${escapeHtml(draft)}</textarea>
-        ${submitted ? `<p class="meta edit-draft-note">Концовка уже отправлена. Можно изменить текст и нажать «${COPY.buttons.updateAnswer}», пока идёт таймер.</p>` : ""}
+        <div class="prompt-box stage-prompt">
+          ${escapeHtml(prompt?.text || (prompt?.audio ? "Голосовое начало" : COPY.empty.promptMissing))}
+          ${audioPlayerHtml(prompt?.audio || null, { compact: true })}
+        </div>
+        ${isEditing ? `
+          <textarea id="answerInput" maxlength="180" placeholder="${COPY.placeholders.answer}">${escapeHtml(draft)}</textarea>
+          ${audioInputHtml("answer")}
+        ` : submittedBlockHtml({ type: "answer", text: myAnswer?.text || "", audio: myAnswer?.audio || null })}
         <div class="progress-card">
           <h3 class="section-title">${COPY.labels.progress}</h3>
           <p class="meta">${currentRoom.answers.length} из ${connectedCount} отправили концовку. ${randomWaitingMessage(currentRoom.answers.length + 2)}</p>
@@ -1069,16 +1283,20 @@ function renderAnswering() {
 
 function jokeText(answer, revealAuthor) {
   const prompt = getPrompt(answer.promptId);
+  const promptLine = prompt?.text || (prompt?.audio ? "[голосовое начало]" : "");
+  const answerLine = answer?.text || (answer?.audio ? "[голосовая концовка]" : "");
   const author = revealAuthor ? `\n\n- автор: ${getPlayerName(answer.authorId)}` : "";
-  return `${prompt?.text || ""}\n${answer.text}${author}`;
+  return `${promptLine}\n${answerLine}${author}`;
 }
 
-function jokeCardHtml({ meta, promptText, answerText, actions = "", winner = false, compact = false }) {
+function jokeCardHtml({ meta, promptText, answerText, promptAudio = null, answerAudio = null, actions = "", winner = false, compact = false }) {
   return `
     <article class="joke game-joke-card ${winner ? "winner-joke" : ""} ${compact ? "compact-joke" : ""}">
       <div class="meta joke-meta">${escapeHtml(meta)}</div>
-      <div class="joke-start">${escapeHtml(promptText || "")}</div>
-      <div class="joke-end">${escapeHtml(answerText || "")}</div>
+      <div class="joke-start">${escapeHtml(promptText || (promptAudio ? "Голосовое начало" : ""))}</div>
+      ${audioPlayerHtml(promptAudio, { compact: true })}
+      <div class="joke-end">${escapeHtml(answerText || (answerAudio ? "Голосовая концовка" : ""))}</div>
+      ${audioPlayerHtml(answerAudio, { compact: true })}
       ${actions ? `<div class="actions joke-actions">${actions}</div>` : ""}
     </article>
   `;
@@ -1098,7 +1316,9 @@ function jokesHtml({ voting = false, revealAuthor = false } = {}) {
         return jokeCardHtml({
           meta,
           promptText: prompt?.text || "",
-          answerText: answer.text,
+          answerText: answer.text || "",
+          promptAudio: prompt?.audio || null,
+          answerAudio: answer.audio || null,
           actions
         });
       }).join("")}
@@ -1166,6 +1386,8 @@ function historyHtml() {
             meta: `Последняя · Раунд ${latest.round} · ${latest.authorName} · голосов: ${latest.votesCount}${latest.tied ? " · ничья" : ""}`,
             promptText: latest.promptText,
             answerText: latest.answerText,
+            promptAudio: latest.promptAudio || null,
+            answerAudio: latest.answerAudio || null,
             compact: true,
             actions: `<button class="btn ghost compact-btn" data-action="copy-history" data-history-index="${latestIndex}">${COPY.buttons.copy}</button>`
           })}
@@ -1177,6 +1399,8 @@ function historyHtml() {
               meta: `Раунд ${joke.round} · ${joke.authorName} · голосов: ${joke.votesCount}${joke.tied ? " · ничья" : ""}`,
               promptText: joke.promptText,
               answerText: joke.answerText,
+              promptAudio: joke.promptAudio || null,
+              answerAudio: joke.answerAudio || null,
               compact: true,
               actions: `<button class="btn ghost compact-btn" data-action="copy-history" data-history-index="${index}">${COPY.buttons.copy}</button>`
             })).join("")}
@@ -1223,6 +1447,8 @@ function renderScoreboard() {
             meta: `Автор: ${result.authorName} · голосов: ${result.votesCount}${result.isRoundWinner ? " · лучшая шутка раунда" : ""}`,
             promptText: result.promptText,
             answerText: result.answerText,
+            promptAudio: result.promptAudio || null,
+            answerAudio: result.answerAudio || null,
             winner: result.isRoundWinner
           })).join("")}
         </div>
@@ -1236,6 +1462,8 @@ function renderScoreboard() {
               meta: `${joke.authorName} · голосов: ${joke.votesCount}${bestJokes.length > 1 ? " · ничья" : ""}`,
               promptText: joke.promptText,
               answerText: joke.answerText,
+              promptAudio: joke.promptAudio || null,
+              answerAudio: joke.answerAudio || null,
               winner: true,
               actions: `<button class="btn yellow" data-action="copy-best" data-best-index="${index}">${COPY.buttons.copyBest}</button>`
             })).join("")}
@@ -1360,6 +1588,25 @@ document.addEventListener("input", (event) => {
   }
 });
 
+document.addEventListener("change", async (event) => {
+  const input = event.target?.closest?.("[data-audio-input]");
+  if (!input) return;
+  const type = input.dataset.audioInput;
+  const file = input.files?.[0];
+  if (!file) return;
+
+  try {
+    const payload = await fileToAudioPayload(file);
+    setAudioDraft(type, payload);
+    showToast(COPY.messages.audioReady);
+    render();
+  } catch (error) {
+    showToast(error.message === "audio-too-large" ? COPY.messages.audioTooLarge : COPY.messages.audioUnsupported);
+  } finally {
+    input.value = "";
+  }
+});
+
 document.addEventListener("click", (event) => {
   const button = event.target.closest("[data-action]");
   const routeButton = event.target.closest("[data-route]");
@@ -1423,6 +1670,38 @@ document.addEventListener("click", (event) => {
 
   if (action === "toggle-history") {
     historyOpen = !historyOpen;
+    render();
+  }
+
+  if (action === "edit-prompt-draft") {
+    promptEditMode = true;
+    const prompt = getMyPrompt();
+    inputDrafts.prompts[promptDraftKey()] = prompt?.text || "";
+    audioDrafts.prompts[promptDraftKey()] = prompt?.audio || null;
+    render();
+  }
+
+  if (action === "edit-answer-draft") {
+    answerEditMode = true;
+    const answer = getMyAnswer();
+    inputDrafts.answers[answerDraftKey()] = answer?.text || "";
+    audioDrafts.answers[answerDraftKey()] = answer?.audio || null;
+    render();
+  }
+
+  if (action === "start-recording-prompt") startAudioRecording("prompt");
+  if (action === "stop-recording-prompt") stopAudioRecording();
+  if (action === "remove-audio-prompt") {
+    setAudioDraft("prompt", null);
+    showToast(COPY.messages.audioRemoved);
+    render();
+  }
+
+  if (action === "start-recording-answer") startAudioRecording("answer");
+  if (action === "stop-recording-answer") stopAudioRecording();
+  if (action === "remove-audio-answer") {
+    setAudioDraft("answer", null);
+    showToast(COPY.messages.audioRemoved);
     render();
   }
 
@@ -1495,14 +1774,18 @@ document.addEventListener("click", (event) => {
 
   if (action === "submit-prompt") {
     const text = document.getElementById("promptInput")?.value || "";
-    if (!text.trim()) return showToast("Напишите начало фразы");
-    socket.emit("submitPrompt", { text });
+    const audio = getPromptAudioDraft();
+    if (!text.trim() && !audio) return showToast("Напишите начало фразы или добавьте аудио");
+    promptEditMode = false;
+    socket.emit("submitPrompt", { text, audio });
   }
 
   if (action === "submit-answer") {
     const text = document.getElementById("answerInput")?.value || "";
-    if (!text.trim()) return showToast("Напишите концовку");
-    socket.emit("submitAnswer", { text });
+    const audio = getAnswerAudioDraft();
+    if (!text.trim() && !audio) return showToast("Напишите концовку или добавьте аудио");
+    answerEditMode = false;
+    socket.emit("submitAnswer", { text, audio });
   }
 
   if (action === "start-voting") socket.emit("startVoting");
@@ -1523,12 +1806,12 @@ document.addEventListener("click", (event) => {
       : (currentRoom.lastBestJoke ? [currentRoom.lastBestJoke] : []);
     const joke = bestJokes[Number(button.dataset.bestIndex || 0)];
     if (!joke) return;
-    copyText(`${joke.promptText}\n${joke.answerText}\n\n- автор: ${joke.authorName}`);
+    copyText(`${joke.promptText || (joke.promptAudio ? "[голосовое начало]" : "")}\n${joke.answerText || (joke.answerAudio ? "[голосовая концовка]" : "")}\n\n- автор: ${joke.authorName}`);
   }
 
   if (action === "copy-history") {
     const joke = currentRoom.bestJokesHistory[Number(button.dataset.historyIndex)];
-    copyText(`${joke.promptText}\n${joke.answerText}\n\n- автор: ${joke.authorName}`);
+    copyText(`${joke.promptText || (joke.promptAudio ? "[голосовое начало]" : "")}\n${joke.answerText || (joke.answerAudio ? "[голосовая концовка]" : "")}\n\n- автор: ${joke.authorName}`);
   }
 
   if (action === "next-round") socket.emit("nextRound");
@@ -1607,6 +1890,7 @@ socket.on("roomUpdate", (room) => {
 
   if (oldState && oldState !== room.state) {
     clearDraftForState(room.state, room);
+    if (room.state === "finished") historyOpen = false;
     pendingNameAction = null;
     closeNameModal();
     closeSettingsModal();
