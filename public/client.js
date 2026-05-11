@@ -1932,36 +1932,26 @@ function renderCreateRoom() {
   const modes = Object.values(GAME_MODES);
   app.innerHTML = `
     <h2 class="panel-title centered-title">Выбери режим игры</h2>
-    <p class="meta centered-meta mode-select-lead">Карточки работают как пресеты: выбираешь механику, а детали меняешь уже в лобби.</p>
-    <section class="mode-select-stage" aria-label="Выбор режима игры">
-      <div class="mode-stage-head">
-        <span class="mode-stage-tab is-active">Режимы</span>
-        <span class="mode-stage-tab">Настройки будут в лобби</span>
-      </div>
-      <div class="mode-grid">
-        ${modes.map((mode) => `
-          <article
-            class="mode-card ${mode.enabled ? "" : "disabled-mode"}"
-            data-action="create-mode-room"
-            data-mode="${escapeHtml(mode.id)}"
-            role="button"
-            tabindex="0"
-            aria-disabled="${mode.enabled ? "false" : "true"}"
-          >
-            <div class="mode-illustration">${gameModeIconSvg(mode.id)}</div>
-            <div class="mode-card-body">
-              <div class="mode-card-top">
-                <span class="mode-min">${mode.minPlayers}+ игрока</span>
-                <span class="mode-pick">Выбрать</span>
-              </div>
-              <h3>${escapeHtml(mode.title)}</h3>
-              <p class="mode-description">${escapeHtml(mode.description)}</p>
-            </div>
-            <div class="mode-tags">${mode.tags.slice(0, 3).map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}</div>
-          </article>
-        `).join("")}
-      </div>
-    </section>
+    <p class="meta centered-meta mode-select-lead">Сначала выбирается режим. После создания лобби режим уже не меняется — можно будет менять только настройки.</p>
+    <div class="mode-grid">
+      ${modes.map((mode) => `
+        <article
+          class="mode-card ${mode.enabled ? "" : "disabled-mode"}"
+          data-action="create-mode-room"
+          data-mode="${escapeHtml(mode.id)}"
+          role="button"
+          tabindex="${mode.enabled ? "0" : "-1"}"
+          aria-disabled="${mode.enabled ? "false" : "true"}"
+        >
+          <div class="mode-card-top">
+            <span class="mode-min">${mode.minPlayers}+ игрока</span>
+          </div>
+          <h3>${escapeHtml(mode.title)}</h3>
+          <p>${escapeHtml(mode.description)}</p>
+          <div class="mode-tags">${mode.tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}</div>
+        </article>
+      `).join("")}
+    </div>
     <div class="actions create-actions">
       <button class="btn ghost" data-route="home">Назад</button>
     </div>
