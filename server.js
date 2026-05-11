@@ -86,6 +86,7 @@ const COPY = {
     roomMissing: "Лобби не найдено",
     gameStarted: "Игра уже началась. Новых игроков больше нельзя добавить в это лобби.",
     roomFull: "Лобби уже забито. Стульев больше нет.",
+    modeNotImplemented: "Этот режим уже есть в меню, но его игровой цикл будет в следующем патче.",
     minPlayers: "Нужно минимум 2 игрока.",
     emptyPrompt: "Напишите начало фразы или добавьте аудио.",
     emptyAnswer: "Напишите концовку или добавьте аудио.",
@@ -100,7 +101,8 @@ const COPY = {
     cannotKickHost: "Сначала передайте роль хоста другому игроку.",
     cannotBanHost: "Хоста нельзя забанить. Сначала передайте хоста.",
     roleLocked: "Хост пока не дал возможность менять роль.",
-    activePlayersFull: "Свободных мест игрока нет."
+    activePlayersFull: "Свободных мест игрока нет.",
+    noSharedPrompts: "Нужно хотя бы одно начало для режима «Все добивают одну фразу»."
   },
   fallbackAnswer: "не успел придумать смешную концовку",
   fallbackPlayer: "аноним из оперативки",
@@ -463,6 +465,74 @@ function renderPlayerPromptTemplate(template, room, seed = 0, options = {}) {
   return String(template || "").replace(/\{\{\s*(player|player2|player3|random|another|me|host)\s*\}\}/gi, (_, key) => {
     return values[String(key).toLowerCase()] || "кто-то из лобби";
   });
+}
+
+
+const GAME_MODES = {
+  classic_pairs: {
+    id: "classic_pairs",
+    title: "Классика связок",
+    shortTitle: "Классика",
+    description: "Игроки пишут начала, затем каждый добивает чужую фразу.",
+    minPlayers: 2,
+    maxPlayers: 12,
+    implemented: true
+  },
+  shared_prompt: {
+    id: "shared_prompt",
+    title: "Одна фраза на всех",
+    shortTitle: "Одна фраза",
+    description: "Каждый пишет начало, потом каждое начало становится раундом для всех.",
+    minPlayers: 2,
+    maxPlayers: 12,
+    implemented: true
+  },
+  duel_tournament: {
+    id: "duel_tournament",
+    title: "Дуэльный турнир",
+    shortTitle: "Дуэль",
+    description: "Игроки проходят сетку дуэлей и трио-боёв до финала.",
+    minPlayers: 3,
+    maxPlayers: 12,
+    implemented: false
+  },
+  guess_author: {
+    id: "guess_author",
+    title: "Угадай автора",
+    shortTitle: "Угадай автора",
+    description: "Сначала угадываем авторов шуток, потом голосуем за лучшие.",
+    minPlayers: 3,
+    maxPlayers: 12,
+    implemented: false
+  },
+  chaos_chain: {
+    id: "chaos_chain",
+    title: "Цепочка хаоса",
+    shortTitle: "Цепочка",
+    description: "Каждый продолжает историю, видя только предыдущий кусок.",
+    minPlayers: 3,
+    maxPlayers: 12,
+    implemented: false
+  },
+  story_chain: {
+    id: "story_chain",
+    title: "Шутка с продолжением",
+    shortTitle: "История",
+    description: "История собирается по частям, все видят предыдущий контекст.",
+    minPlayers: 3,
+    maxPlayers: 12,
+    implemented: false
+  }
+};
+
+function normalizeGameMode(value) {
+  const id = String(value || "classic_pairs");
+  return GAME_MODES[id] ? id : "classic_pairs";
+}
+
+function getGameMode(roomOrMode) {
+  const id = typeof roomOrMode === "string" ? roomOrMode : roomOrMode?.gameMode;
+  return GAME_MODES[normalizeGameMode(id)] || GAME_MODES.classic_pairs;
 }
 
 const rooms = {};
@@ -832,7 +902,6 @@ function normalizeSettings(raw = {}) {
       customPromptPacks,
       spectatorMode: raw.spectatorMode === false ? false : true,
       spectatorVoting: ["off", "reactions", "grandFinalOnly"].includes(raw.spectatorVoting) ? raw.spectatorVoting : "off",
-      assignmentMode: raw.assignmentMode === "same" ? "same" : "different",
       maxPlayers: clampNumber(raw.maxPlayers, 2, 12, 6),
       publicLobby: raw.publicLobby !== false
     }
@@ -908,17 +977,30 @@ function emitRoom(room) {
 function getOpenRooms() {
   return Object.values(rooms)
     .filter((room) => room.state === "waiting" && room.settings.publicLobby)
-    .map((room) => ({
-      code: room.code,
-      hostName: getPlayerName(room, room.hostId),
-      playersCount: getConnectedPlayers(room).length,
-      spectatorsCount: getConnectedSpectators(room).length,
-      maxPlayers: room.settings.maxPlayers,
-      maxRounds: room.maxRounds,
-      promptMode: room.settings.promptMode,
-      assignmentMode: room.settings.assignmentMode
-    }))
-    .sort((a, b) => a.code.localeCompare(b.code));
+    .map((room) => {
+      const playersCount = getConnectedPlayers(room).length;
+      const maxPlayers = room.settings.maxPlayers;
+      const mode = getGameMode(room);
+      return {
+        code: room.code,
+        hostName: getPlayerName(room, room.hostId),
+        playersCount,
+        spectatorsCount: getConnectedSpectators(room).length,
+        maxPlayers,
+        isFull: playersCount >= maxPlayers,
+        occupancy: maxPlayers ? playersCount / maxPlayers : 0,
+        maxRounds: room.maxRounds,
+        promptMode: room.settings.promptMode,
+        gameMode: mode.id,
+        gameModeTitle: mode.title,
+        sharedRounds: room.sharedPromptQueue?.length || 0
+      };
+    })
+    .sort((a, b) => {
+      if (a.isFull !== b.isFull) return a.isFull ? 1 : -1;
+      if (b.occupancy !== a.occupancy) return b.occupancy - a.occupancy;
+      return a.code.localeCompare(b.code);
+    });
 }
 
 function emitOpenRooms() {
@@ -996,6 +1078,13 @@ function assignNewHostIfNeeded(room, leavingPlayerId = null) {
 function maybeAdvanceAfterPlayerLeave(room) {
   const connectedPlayers = getConnectedPlayers(room);
   if (connectedPlayers.length === 0) return;
+
+  if (room.state === "collectingSharedPrompts" && connectedPlayers.every((player) => {
+    return room.prompts.some((prompt) => prompt.authorId === player.id);
+  })) {
+    finalizeSharedPromptCollection(room);
+    return;
+  }
 
   if (room.state === "prompting" && connectedPlayers.every((player) => {
     return room.prompts.some((prompt) => prompt.authorId === player.id);
@@ -1081,6 +1170,7 @@ function resetRoundData(room) {
   room.prompts = [];
   room.sharedPrompt = null;
   room.assignments = {};
+  room.assignmentMeta = {};
   room.answers = [];
   room.votes = [];
   room.lastRoundResults = [];
@@ -1091,7 +1181,128 @@ function resetRoundData(room) {
   clearRoomTimer(room);
 }
 
+function shuffleItems(items) {
+  const result = [...safeArray(items)];
+  for (let index = result.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
+  }
+  return result;
+}
+
+function isSharedPromptMode(room) {
+  return normalizeGameMode(room?.gameMode) === "shared_prompt";
+}
+
+function makeAutoSharedPrompt(room, player = null, index = 0) {
+  const text = pickAutoPrompt(room.round + index + Date.now(), room, { playerId: player?.id || null });
+  return {
+    id: makeId("prompt"),
+    round: room.round,
+    authorId: player?.id || null,
+    text,
+    audio: null,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    submittedAtMs: 0,
+    versions: [{
+      version: 1,
+      text,
+      textLength: text.length,
+      audio: null,
+      audioMeta: null,
+      source: "auto",
+      createdAt: Date.now(),
+      elapsedMs: 0,
+      change: { type: "auto_fallback", editDistance: 0, changeRatio: 0, beforeLength: 0, afterLength: text.length, lengthDelta: text.length, audioAction: "none", audioDurationDelta: 0, audioSourceChanged: false }
+    }]
+  };
+}
+
+function buildAutoSharedPromptQueue(room) {
+  const players = getConnectedPlayers(room);
+  const count = Math.max(1, players.length);
+  return Array.from({ length: count }, (_, index) => makeAutoSharedPrompt(room, players[index] || null, index));
+}
+
+function startCollectingSharedPrompts(room) {
+  resetRoundData(room);
+  room.round = 1;
+  room.sharedPromptQueue = [];
+  room.currentSharedPromptIndex = 0;
+  room.sharedPromptCollectionComplete = false;
+  setRoomStage(room, "collectingSharedPrompts");
+  setStageTimer(room, room.timers.promptSeconds, () => expireSharedPromptCollection(room.code));
+  emitRoom(room);
+}
+
+function finalizeSharedPromptCollection(room) {
+  clearRoomTimer(room);
+  if (!isSharedPromptMode(room)) return startRound(room);
+
+  let queue = safeArray(room.prompts).filter((prompt) => prompt.text || prompt.audio);
+  if (!queue.length) {
+    // Чтобы игра не зависла, если никто не отправил начало, берём одно автоначало из выбранного пака.
+    queue = [makeAutoSharedPrompt(room, getConnectedPlayers(room)[0] || null, 0)];
+  }
+
+  room.sharedPromptQueue = shuffleItems(queue).map((prompt, index) => ({
+    ...prompt,
+    queueIndex: index,
+    originalRound: prompt.round || 1
+  }));
+  room.maxRounds = room.sharedPromptQueue.length;
+  room.currentSharedPromptIndex = 0;
+  room.sharedPromptCollectionComplete = true;
+  room.round = 1;
+  startSharedPromptRound(room);
+}
+
+function expireSharedPromptCollection(code) {
+  const room = rooms[code];
+  if (!room || room.state !== "collectingSharedPrompts") return;
+  finalizeSharedPromptCollection(room);
+}
+
+function startSharedPromptRound(room) {
+  resetRoundData(room);
+  const queue = safeArray(room.sharedPromptQueue);
+  const prompt = queue[room.currentSharedPromptIndex];
+  if (!prompt) {
+    startGrandVoting(room);
+    return;
+  }
+
+  const roundPrompt = {
+    ...prompt,
+    round: room.round,
+    id: prompt.id || makeId("prompt")
+  };
+
+  room.prompts = [roundPrompt];
+  room.sharedPrompt = roundPrompt.id;
+  room.assignments = {};
+  getConnectedPlayers(room).forEach((player) => {
+    room.assignments[player.id] = roundPrompt.id;
+  });
+
+  logEvent(room, "shared_prompt_round_start", roundPrompt.authorId, {
+    promptId: roundPrompt.id,
+    queueIndex: room.currentSharedPromptIndex,
+    round: room.round
+  });
+
+  setRoomStage(room, "answering");
+  setStageTimer(room, room.timers.answerSeconds, () => expireAnswering(room.code));
+  emitRoom(room);
+}
+
 function startRound(room) {
+  if (isSharedPromptMode(room) && room.sharedPromptCollectionComplete) {
+    startSharedPromptRound(room);
+    return;
+  }
+
   resetRoundData(room);
 
   if (room.settings.promptMode === "auto") {
@@ -1114,7 +1325,20 @@ function startGameCountdown(room) {
   room.timerHandle = setTimeout(() => {
     const latest = rooms[room.code];
     if (!latest || latest.state !== "starting") return;
-    startRound(latest);
+    if (isSharedPromptMode(latest)) {
+      if (latest.settings.promptMode === "auto") {
+        latest.sharedPromptQueue = buildAutoSharedPromptQueue(latest);
+        latest.maxRounds = latest.sharedPromptQueue.length;
+        latest.currentSharedPromptIndex = 0;
+        latest.sharedPromptCollectionComplete = true;
+        latest.round = 1;
+        startSharedPromptRound(latest);
+      } else {
+        startCollectingSharedPrompts(latest);
+      }
+    } else {
+      startRound(latest);
+    }
   }, 5200);
   emitRoom(room);
 }
@@ -1122,30 +1346,8 @@ function startGameCountdown(room) {
 function buildAssignments(room) {
   const players = getConnectedPlayers(room);
   room.assignments = {};
-
-  if (room.settings.assignmentMode === "same") {
-    let prompt = null;
-
-    if (room.settings.promptMode === "manual" && room.prompts.length > 0) {
-      prompt = randomItem(room.prompts);
-    } else {
-      prompt = {
-        id: makeId("prompt"),
-        round: room.round,
-        authorId: null,
-        text: pickAutoPrompt(room.round + Date.now(), room),
-        audio: null,
-        versions: []
-      };
-      room.prompts.push(prompt);
-    }
-
-    room.sharedPrompt = prompt.id;
-    players.forEach((player) => {
-      room.assignments[player.id] = prompt.id;
-    });
-    return;
-  }
+  room.assignmentMeta = {};
+  if (!players.length) return;
 
   if (room.settings.promptMode === "auto") {
     players.forEach((player, index) => {
@@ -1159,45 +1361,86 @@ function buildAssignments(room) {
       };
       room.prompts.push(prompt);
       room.assignments[player.id] = prompt.id;
+      room.assignmentMeta[player.id] = { reused: false, auto: true };
     });
     return;
   }
 
-  const promptByAuthor = new Map(room.prompts.map((prompt) => [prompt.authorId, prompt]));
-  players.forEach((player, index) => {
-    const nextPlayer = players[(index + 1) % players.length];
-    const prompt = promptByAuthor.get(nextPlayer.id) || room.prompts[index % room.prompts.length];
-    if (prompt) room.assignments[player.id] = prompt.id;
+  if (!room.prompts.length) {
+    const fallbackPrompt = {
+      id: makeId("prompt"),
+      round: room.round,
+      authorId: null,
+      text: pickAutoPrompt(room.round + Date.now(), room),
+      audio: null,
+      versions: []
+    };
+    room.prompts.push(fallbackPrompt);
+  }
+
+  const roundUsage = {};
+  if (!room.assignmentHistory) room.assignmentHistory = {};
+
+  players.forEach((player) => {
+    const foreignPrompts = room.prompts.filter((prompt) => !prompt.authorId || prompt.authorId !== player.id);
+    const candidates = foreignPrompts.length ? foreignPrompts : room.prompts;
+
+    const scored = candidates.map((prompt) => {
+      const usageCount = roundUsage[prompt.id] || 0;
+      const pairKey = `${prompt.authorId || "auto"}->${player.id}`;
+      const pairRepeats = room.assignmentHistory[pairKey] || 0;
+      return {
+        prompt,
+        score: usageCount * 1000 + pairRepeats * 25 + Math.random()
+      };
+    }).sort((a, b) => a.score - b.score);
+
+    const selected = scored[0]?.prompt;
+    if (!selected) return;
+
+    const wasReused = (roundUsage[selected.id] || 0) > 0;
+    room.assignments[player.id] = selected.id;
+    room.assignmentMeta[player.id] = { reused: wasReused, auto: !selected.authorId };
+    roundUsage[selected.id] = (roundUsage[selected.id] || 0) + 1;
+
+    const pairKey = `${selected.authorId || "auto"}->${player.id}`;
+    room.assignmentHistory[pairKey] = (room.assignmentHistory[pairKey] || 0) + 1;
+    if (wasReused) {
+      logEvent(room, "prompt_reused", player.id, { promptId: selected.id, promptAuthorId: selected.authorId || null });
+    }
   });
 }
 
 function fillMissingPrompts(room) {
-  const submitted = new Set(room.prompts.map((prompt) => prompt.authorId));
-  getConnectedPlayers(room).forEach((player, index) => {
+  const submitted = new Set(room.prompts.map((prompt) => prompt.authorId).filter(Boolean));
+  getConnectedPlayers(room).forEach((player) => {
     if (!submitted.has(player.id)) {
-      const fallbackText = pickAutoPrompt(room.round + index, room, { playerId: player.id });
       incrementPlayerStat(room, player.id, "missedPrompts");
-      logEvent(room, "miss_prompt", player.id, { fallbackText });
-      room.prompts.push({
-        id: makeId("prompt"),
-        round: room.round,
-        authorId: player.id,
-        text: fallbackText,
-        audio: null,
-        versions: [{
-          version: 1,
-          text: fallbackText,
-          textLength: fallbackText.length,
-          audio: null,
-          audioMeta: null,
-          source: "auto",
-          createdAt: Date.now(),
-          elapsedMs: getStageElapsedMs(room),
-          change: { type: "auto_fallback", editDistance: 0, changeRatio: 0, beforeLength: 0, afterLength: fallbackText.length, lengthDelta: fallbackText.length, audioAction: "none", audioDurationDelta: 0, audioSourceChanged: false }
-        }]
-      });
+      logEvent(room, "miss_prompt", player.id, { fallback: room.prompts.length ? "reuse_foreign_prompt" : "auto_prompt" });
     }
   });
+
+  if (!room.prompts.length) {
+    const fallbackText = pickAutoPrompt(room.round + Date.now(), room);
+    room.prompts.push({
+      id: makeId("prompt"),
+      round: room.round,
+      authorId: null,
+      text: fallbackText,
+      audio: null,
+      versions: [{
+        version: 1,
+        text: fallbackText,
+        textLength: fallbackText.length,
+        audio: null,
+        audioMeta: null,
+        source: "auto",
+        createdAt: Date.now(),
+        elapsedMs: getStageElapsedMs(room),
+        change: { type: "auto_fallback", editDistance: 0, changeRatio: 0, beforeLength: 0, afterLength: fallbackText.length, lengthDelta: fallbackText.length, audioAction: "none", audioDurationDelta: 0, audioSourceChanged: false }
+      }]
+    });
+  }
 }
 
 function moveToAnswering(room) {
@@ -1396,6 +1639,11 @@ function buildPlayerStats(room) {
   return room.players.map((player) => {
     const answers = archived.filter((joke) => joke.answerAuthorId === player.id);
     const prompts = archived.filter((joke) => joke.promptAuthorId === player.id);
+    const promptVoteMap = new Map();
+    prompts.forEach((joke) => promptVoteMap.set(joke.promptId, (promptVoteMap.get(joke.promptId) || 0) + (joke.votesCount || 0)));
+    const promptsSubmittedEvents = events.filter((event) => ["submit_prompt", "submit_shared_prompt"].includes(event.type) && event.playerId === player.id).length;
+    const totalVotesOnOwnPrompts = [...promptVoteMap.values()].reduce((sum, value) => sum + value, 0);
+    const bestPromptRoundVotes = Math.max(0, ...promptVoteMap.values());
     const votesGiven = events.filter((event) => ["vote_round", "vote_grand"].includes(event.type) && event.playerId === player.id);
     const edits = events.filter((event) => ["update_prompt", "update_answer"].includes(event.type) && event.playerId === player.id);
     const audioEvents = events.filter((event) => ["submit_prompt", "update_prompt", "submit_answer", "update_answer"].includes(event.type) && event.playerId === player.id && event.payload?.audio);
@@ -1428,6 +1676,9 @@ function buildPlayerStats(room) {
       totalVotesReceived: player.totalVotesReceived,
       bestSingleRoundVotes: player.bestSingleRoundVotes,
       answersSubmitted: answers.length,
+      promptsSubmitted: promptsSubmittedEvents,
+      totalVotesOnOwnPrompts,
+      bestPromptRoundVotes,
       promptsThatLedToVotes: prompts.filter((joke) => joke.votesCount > 0).length,
       promptsThatLedToWinningAnswers: prompts.filter((joke) => joke.isRoundWinner).length,
       votesGiven: votesGiven.length,
@@ -1479,6 +1730,8 @@ function selectPersonalTitle(stat, allStats, place, topScore) {
   if (stat.answersSubmitted >= 2 && stat.roundsWithVotes >= Math.ceil(stat.answersSubmitted * 0.6)) add(78, titleObject("stable_funny", "Стабильный смешной", "stable", "Не всегда забирал раунд, но почти всегда собирал реакцию.", "rare"));
   if (stat.averageAnswerLength <= 35 && stat.totalVotesReceived > 0) add(72, titleObject("short_master", "Мастер короткой фразы", "short", "Сказал мало, но этого хватило.", "rare"));
   if (stat.averageAnswerLength >= 95) add(68, titleObject("long_author", "Автор простыней", "long", "Не жалел символов и превращал концовки в мини-истории.", "rare"));
+  if (stat.promptsSubmitted > 0 && stat.totalVotesOnOwnPrompts >= Math.max(2, maxVotes)) add(93, titleObject("setup_supplier", "Поставщик ситуаций", "creator", "Давал такие начала, на которых вся комната разгонялась сильнее всего.", "epic"));
+  if (stat.promptsThatLedToWinningAnswers > 0 && stat.bestPromptRoundVotes >= 2) add(91, titleObject("evening_starter", "Разгонщик вечера", "creator", "Его начало стало площадкой для победной добивки раунда.", "epic"));
   if (stat.promptsThatLedToWinningAnswers > 0) add(84, titleObject("joke_architect", "Архитектор шуток", "creator", "Кидал такие начала, из которых другим было легко делать смешно.", "epic"));
   if (stat.votesForWinners > 0 && stat.votesGiven > 0 && stat.votesForWinners / stat.votesGiven >= 0.6) add(70, titleObject("people_vote", "Голос народа", "people_vote", "Часто выбирал то, что потом выбирала вся комната.", "rare"));
   if (stat.answersSubmitted === 0 && stat.votesGiven > 0) add(76, titleObject("judge_without_pen", "Судья без пера", "judge", "Сам почти не писал, зато внимательно выбирал чужие шутки.", "rare"));
@@ -1799,18 +2052,22 @@ function finishGame(room) {
 }
 
 io.on("connection", (socket) => {
-  socket.on("createRoom", ({ name, settings, sessionId } = {}) => {
+  socket.on("createRoom", ({ name, settings, sessionId, gameMode } = {}) => {
     const cleanName = cleanText(name, 32);
     const cleanSession = cleanSessionId(sessionId) || makeId("player");
     if (!cleanName) return emitError(socket, COPY.errors.emptyName);
 
     const code = generateRoomCode();
+    const cleanGameMode = normalizeGameMode(gameMode);
+    const mode = getGameMode(cleanGameMode);
+    if (!mode.implemented) return emitError(socket, COPY.errors.modeNotImplemented);
     const normalized = normalizeSettings(settings);
     const settingsError = validateNormalizedSettings(normalized);
     if (settingsError) return emitError(socket, settingsError);
     const room = {
       code,
       hostId: cleanSession,
+      gameMode: cleanGameMode,
       state: "waiting",
       round: 1,
       maxRounds: normalized.maxRounds,
@@ -1822,9 +2079,14 @@ io.on("connection", (socket) => {
       spectators: [],
       bannedSessionIds: [],
       promptCursor: 0,
+      sharedPromptQueue: [],
+      currentSharedPromptIndex: 0,
+      sharedPromptCollectionComplete: false,
       prompts: [],
       sharedPrompt: null,
       assignments: {},
+      assignmentMeta: {},
+      assignmentHistory: {},
       answers: [],
       votes: [],
       lastRoundResults: [],
@@ -1979,8 +2241,10 @@ io.on("connection", (socket) => {
   socket.on("startGame", () => {
     const room = rooms[socket.data.roomCode];
     if (!ensureHost(socket, room)) return;
-    if (getConnectedPlayers(room).length < 2) {
-      return emitError(socket, COPY.errors.minPlayers);
+    const mode = getGameMode(room);
+    if (!mode.implemented) return emitError(socket, COPY.errors.modeNotImplemented);
+    if (getConnectedPlayers(room).length < mode.minPlayers) {
+      return emitError(socket, `Для режима «${mode.title}» нужно минимум ${mode.minPlayers} игрока.`);
     }
 
     room.round = 1;
@@ -1991,6 +2255,10 @@ io.on("connection", (socket) => {
     });
     room.bestJokesHistory = [];
     room.jokeArchive = [];
+    room.sharedPromptQueue = [];
+    room.currentSharedPromptIndex = 0;
+    room.sharedPromptCollectionComplete = false;
+    room.assignmentHistory = {};
     room.events = [];
     room.grandFinal = null;
     room.finalSummary = null;
@@ -2003,8 +2271,9 @@ io.on("connection", (socket) => {
   socket.on("submitPrompt", ({ text, audio } = {}) => {
     const room = rooms[socket.data.roomCode];
     const playerId = socket.data.playerId;
-    if (!room || room.state !== "prompting") return;
+    if (!room || !["prompting", "collectingSharedPrompts"].includes(room.state)) return;
 
+    const isSharedCollection = room.state === "collectingSharedPrompts";
     const promptText = cleanText(text, PROMPT_MAX_LENGTH);
     const cleanedAudio = cleanAudio(audio);
     if (cleanedAudio.error) return emitError(socket, cleanedAudio.error);
@@ -2020,7 +2289,7 @@ io.on("connection", (socket) => {
       existingPrompt.versions = safeArray(existingPrompt.versions);
       existingPrompt.versions.push(version);
       applySubmissionStats(room, playerId, version, "prompt", true);
-      logEvent(room, "update_prompt", playerId, { promptId: existingPrompt.id, version: version.version, change: version.change });
+      logEvent(room, isSharedCollection ? "update_shared_prompt" : "update_prompt", playerId, { promptId: existingPrompt.id, version: version.version, change: version.change });
       emitRoom(room);
       return;
     }
@@ -2038,10 +2307,11 @@ io.on("connection", (socket) => {
     };
     room.prompts.push(prompt);
     applySubmissionStats(room, playerId, version, "prompt", false);
-    logEvent(room, "submit_prompt", playerId, { promptId: prompt.id, version: 1, textLength: promptText.length, audio: version.audioMeta });
+    logEvent(room, isSharedCollection ? "submit_shared_prompt" : "submit_prompt", playerId, { promptId: prompt.id, version: 1, textLength: promptText.length, audio: version.audioMeta });
 
     if (getConnectedPlayers(room).every((player) => room.prompts.some((prompt) => prompt.authorId === player.id))) {
-      moveToAnswering(room);
+      if (isSharedCollection) finalizeSharedPromptCollection(room);
+      else moveToAnswering(room);
     } else {
       emitRoom(room);
     }
@@ -2136,6 +2406,9 @@ io.on("connection", (socket) => {
       startGrandVoting(room);
     } else {
       room.round += 1;
+      if (isSharedPromptMode(room) && room.sharedPromptCollectionComplete) {
+        room.currentSharedPromptIndex += 1;
+      }
       startRound(room);
     }
   });
@@ -2301,6 +2574,10 @@ io.on("connection", (socket) => {
     resetRoundData(room);
     room.bestJokesHistory = [];
     room.jokeArchive = [];
+    room.sharedPromptQueue = [];
+    room.currentSharedPromptIndex = 0;
+    room.sharedPromptCollectionComplete = false;
+    room.assignmentHistory = {};
     room.events = [];
     room.grandFinal = null;
     room.finalSummary = null;

@@ -40,10 +40,81 @@ const DEFAULT_ROOM_SETTINGS = {
   promptPack: "mixed",
   spectatorMode: true,
   spectatorVoting: "off",
-  assignmentMode: "different",
   maxPlayers: 6,
   publicLobby: true
 };
+
+
+const GAME_MODES = {
+  classic_pairs: {
+    id: "classic_pairs",
+    title: "Классика связок",
+    shortTitle: "Классика",
+    description: "Игроки пишут начала, затем каждый добивает чужую фразу.",
+    status: "Готово",
+    minPlayers: 2,
+    tags: ["связки", "база", "2+ игрока"],
+    enabled: true
+  },
+  shared_prompt: {
+    id: "shared_prompt",
+    title: "Одна фраза на всех",
+    shortTitle: "Одна фраза",
+    description: "Каждый пишет начало, потом каждое начало становится раундом для всех.",
+    status: "Готово",
+    minPlayers: 2,
+    tags: ["баттл", "одинаковая фраза", "2+ игрока"],
+    enabled: true
+  },
+  duel_tournament: {
+    id: "duel_tournament",
+    title: "Дуэльный турнир",
+    shortTitle: "Дуэль",
+    description: "Дуэли и трио-бои по сетке: четвертьфинал, полуфинал, финал.",
+    status: "Следующий патч",
+    minPlayers: 3,
+    tags: ["турнир", "сетка", "3+ игрока"],
+    enabled: false
+  },
+  guess_author: {
+    id: "guess_author",
+    title: "Угадай автора",
+    shortTitle: "Угадай автора",
+    description: "Сначала угадываем автора начала/концовки, потом голосуем за шутку.",
+    status: "Следующий патч",
+    minPlayers: 3,
+    tags: ["угадайка", "анонимно", "3+ игрока"],
+    enabled: false
+  },
+  chaos_chain: {
+    id: "chaos_chain",
+    title: "Цепочка хаоса",
+    shortTitle: "Цепочка",
+    description: "Каждый видит только предыдущий кусок истории и продолжает вслепую.",
+    status: "Следующий патч",
+    minPlayers: 3,
+    tags: ["история", "хаос", "3+ игрока"],
+    enabled: false
+  },
+  story_chain: {
+    id: "story_chain",
+    title: "Шутка с продолжением",
+    shortTitle: "История",
+    description: "История собирается по частям, каждый видит весь предыдущий контекст.",
+    status: "Следующий патч",
+    minPlayers: 3,
+    tags: ["история", "контекст", "3+ игрока"],
+    enabled: false
+  }
+};
+
+function gameModeInfo(modeId) {
+  return GAME_MODES[modeId] || GAME_MODES.classic_pairs;
+}
+
+function gameModeTitle(modeId) {
+  return gameModeInfo(modeId).title;
+}
 
 const SOUND_FILES = {
   click: "/sounds/ui-click.mp3",
@@ -189,9 +260,9 @@ const COPY = {
     spectatorOff: "Зрители только смотрят",
     spectatorReactions: "Зрители ставят реакции",
     spectatorGrandOnly: "Зрители голосуют только в финале",
-    assignmentMode: "Как раздаем фразы",
-    assignmentDifferent: "Каждый добивает чужую фразу",
-    assignmentSame: "Все добивают одну и ту же фразу",
+    fixedGameMode: "Режим игры",
+    fixedGameModeHint: "Режим нельзя изменить после создания лобби. Чтобы выбрать другой режим, создай новое лобби.",
+    sharedRoundsHint: "Если начала пишут игроки, количество раундов будет равно количеству отправленных начал.",
     maxPlayers: "Максимум игроков",
     publicLobby: "Показывать лобби в списке открытых",
     anonymous: "Скрывать авторов до итогов раунда",
@@ -278,6 +349,7 @@ let timerInterval = null;
 let sessionId = getOrCreateSessionId();
 let openRooms = [];
 let lobbySettingsOpen = false;
+let settingsModalInitialSignature = null;
 let openRoomsLoading = false;
 let openRoomsTimer = null;
 let pendingNameAction = null;
@@ -1061,7 +1133,7 @@ function clearDraftForState(state, room = currentRoom) {
   if (!room) return;
   const promptKey = `${room.code}:${room.round}:${getMyId()}`;
   const answerKey = `${room.code}:${room.round}:${getMyId()}`;
-  if (state !== "prompting") {
+  if (!["prompting", "collectingSharedPrompts"].includes(state)) {
     delete inputDrafts.prompts[promptKey];
     delete audioDrafts.prompts[promptKey];
     promptEditMode = false;
@@ -1297,9 +1369,66 @@ function closeNameModal() {
   document.getElementById("nameModal")?.remove();
 }
 
+function normalizeSettingsSignature(settings) {
+  return JSON.stringify({
+    maxRounds: String(settings.maxRounds ?? ""),
+    promptSeconds: String(settings.promptSeconds ?? ""),
+    answerSeconds: String(settings.answerSeconds ?? ""),
+    voteSeconds: String(settings.voteSeconds ?? ""),
+    promptMode: String(settings.promptMode ?? ""),
+    promptPack: String(settings.promptPack ?? ""),
+    spectatorVoting: String(settings.spectatorVoting ?? ""),
+    maxPlayers: String(settings.maxPlayers ?? ""),
+    anonymousMode: Boolean(settings.anonymousMode),
+    soundsEnabled: Boolean(settings.soundsEnabled),
+    publicLobby: Boolean(settings.publicLobby),
+    spectatorMode: Boolean(settings.spectatorMode)
+  });
+}
+
+function currentSettingsSignature() {
+  return normalizeSettingsSignature(readSettings());
+}
+
 function closeSettingsModal() {
   lobbySettingsOpen = false;
+  settingsModalInitialSignature = null;
   document.getElementById("settingsModal")?.remove();
+  document.getElementById("settingsDiscardConfirm")?.remove();
+}
+
+function hasUnsavedSettingsChanges() {
+  return Boolean(lobbySettingsOpen && settingsModalInitialSignature && currentSettingsSignature() !== settingsModalInitialSignature);
+}
+
+function renderSettingsDiscardConfirm() {
+  document.getElementById("settingsDiscardConfirm")?.remove();
+  document.body.insertAdjacentHTML("beforeend", `
+    <div class="discard-backdrop" id="settingsDiscardConfirm">
+      <section class="discard-modal" role="dialog" aria-modal="true" aria-labelledby="settingsDiscardTitle">
+        <h3 id="settingsDiscardTitle">Есть несохранённые изменения</h3>
+        <p class="meta">Если закрыть настройки сейчас, изменения не сохранятся.</p>
+        <div class="modal-actions">
+          <button class="btn primary" data-action="discard-settings-changes">Закрыть без сохранения</button>
+          <button class="btn ghost" data-action="continue-settings-edit">Продолжить редактировать</button>
+        </div>
+      </section>
+    </div>
+  `);
+}
+
+function requestCloseSettingsModal() {
+  if (hasUnsavedSettingsChanges()) {
+    renderSettingsDiscardConfirm();
+    return;
+  }
+  closeSettingsModal();
+}
+
+function openSettingsModal() {
+  lobbySettingsOpen = true;
+  settingsModalInitialSignature = null;
+  renderSettingsModal();
 }
 
 function renderNameModal({ title = "Введите ник", note = "Он будет виден друзьям в лобби.", buttonText = "Продолжить" } = {}) {
@@ -1325,14 +1454,30 @@ function renderSettingsModal() {
   document.body.insertAdjacentHTML("beforeend", `
     <div class="modal-backdrop" id="settingsModal">
       <section class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settingsModalTitle">
-        <div class="section-row">
+        <div class="section-row settings-modal-head">
           <h2 id="settingsModalTitle" class="section-title">Настройки игры</h2>
-          <button class="modal-close" data-action="toggle-settings" aria-label="Закрыть настройки">×</button>
+          <button class="modal-close" data-action="close-settings" aria-label="Закрыть настройки">×</button>
         </div>
         ${roomSettingsFormHtml(currentRoom)}
       </section>
     </div>
   `);
+  updateModeSettingsUi();
+  if (!settingsModalInitialSignature) {
+    settingsModalInitialSignature = currentSettingsSignature();
+  }
+}
+
+function updateModeSettingsUi() {
+  const modeId = currentRoom?.gameMode || "classic_pairs";
+  const promptMode = document.getElementById("promptMode")?.value || DEFAULT_ROOM_SETTINGS.promptMode;
+  const hideRounds = modeId === "shared_prompt" && promptMode === "manual";
+  document.querySelectorAll(".rounds-field").forEach((field) => {
+    field.classList.toggle("is-hidden-by-mode", hideRounds);
+  });
+  document.querySelectorAll(".shared-rounds-hint").forEach((hint) => {
+    hint.textContent = modeId === "shared_prompt" ? COPY.settings.sharedRoundsHint : "";
+  });
 }
 
 function playTone(notes) {
@@ -1533,6 +1678,21 @@ function requestSpectatorJoin() {
   });
 }
 
+function filteredOpenRooms() {
+  const query = lobbySearchQuery.trim().toLowerCase();
+  return openRooms.filter((room) => {
+    const modeOk = lobbyModeFilter === "all" || room.gameMode === lobbyModeFilter;
+    const searchText = `${room.code} ${room.hostName || ""} ${room.gameModeTitle || ""}`.toLowerCase();
+    const queryOk = !query || searchText.includes(query);
+    return modeOk && queryOk;
+  });
+}
+
+function lobbyModeFilterOptionsHtml() {
+  const options = [["all", "Все режимы"], ...Object.values(GAME_MODES).map((mode) => [mode.id, mode.shortTitle])];
+  return options.map(([value, label]) => `<option value="${escapeHtml(value)}" ${lobbyModeFilter === value ? "selected" : ""}>${escapeHtml(label)}</option>`).join("");
+}
+
 function openRoomsHtml({ compact = false } = {}) {
   if (openRoomsLoading) {
     return `
@@ -1543,7 +1703,9 @@ function openRoomsHtml({ compact = false } = {}) {
     `;
   }
 
-  if (!openRooms.length) {
+  const rooms = filteredOpenRooms();
+
+  if (!rooms.length) {
     return `
       <div class="empty-lobbies">
         <div class="empty-icon">+</div>
@@ -1559,35 +1721,47 @@ function openRoomsHtml({ compact = false } = {}) {
 
   return `
     <div class="open-rooms ${compact ? "open-rooms-compact" : ""}">
-      ${openRooms.map((room) => `
-        <article class="open-room" data-action="join-open-room" data-room-code="${escapeHtml(room.code)}" tabindex="0" role="button" aria-label="Войти в лобби ${escapeHtml(room.code)}">
-          <div class="open-room-main">
-            <div class="open-room-host">Лобби ${escapeHtml(room.hostName)}</div>
-            <div class="open-room-code">${escapeHtml(room.code)}</div>
-            <p class="meta">Код: ${escapeHtml(room.code)}</p>
-          </div>
-          <div class="open-room-stats">
-            <span>${room.playersCount}/${room.maxPlayers} игроков</span>
-          </div>
-          <button class="btn primary compact-btn" data-action="join-open-room" data-room-code="${escapeHtml(room.code)}">Войти</button>
-        </article>
-      `).join("")}
+      ${rooms.map((room) => {
+        const mode = gameModeInfo(room.gameMode);
+        const full = room.isFull || room.playersCount >= room.maxPlayers;
+        return `
+          <article class="open-room ${full ? "is-full" : ""}" ${full ? "" : `data-action="join-open-room" data-room-code="${escapeHtml(room.code)}" tabindex="0" role="button"`} aria-label="Лобби ${escapeHtml(room.code)}">
+            <div class="open-room-main">
+              <div class="open-room-host">Лобби ${escapeHtml(room.hostName)}</div>
+              <div class="open-room-code">${escapeHtml(room.code)}</div>
+              <p class="meta">${escapeHtml(mode.title)} · код ${escapeHtml(room.code)}</p>
+            </div>
+            <div class="open-room-stats">
+              <span>${room.playersCount}/${room.maxPlayers} игроков</span>
+              ${room.spectatorsCount ? `<span>${room.spectatorsCount} зр.</span>` : ""}
+              ${full ? `<span class="full-badge">заполнено</span>` : ""}
+            </div>
+            <button class="btn primary compact-btn" data-action="join-open-room" data-room-code="${escapeHtml(room.code)}" ${full ? "disabled" : ""}>${full ? "Нет мест" : "Войти"}</button>
+          </article>
+        `;
+      }).join("")}
     </div>
   `;
 }
 
 function renderLobbyBrowser() {
+  const rooms = filteredOpenRooms();
   app.classList.add("server-list-card");
   app.innerHTML = `
     <h2 class="panel-title centered-title lobby-browser-title">${COPY.screens.lobbies}</h2>
     <section class="lobby-browser-panel">
       <div class="lobby-browser-toolbar">
-        <div class="lobby-browser-count">${openRooms.length} лобби</div>
+        <div class="lobby-browser-count">${rooms.length} из ${openRooms.length} лобби</div>
         <div class="actions">
           <button class="btn ghost icon-btn" data-action="refresh-lobbies" title="${COPY.buttons.refreshRooms}" aria-label="${COPY.buttons.refreshRooms}">↻</button>
           <button class="btn ghost icon-btn" data-route="join" title="Назад" aria-label="Назад">←</button>
         </div>
       </div>
+      <div class="lobby-filters">
+        <input id="lobbySearchInput" class="lobby-search-input" type="search" placeholder="Поиск по коду, хосту или режиму" value="${escapeHtml(lobbySearchQuery)}">
+        <select id="lobbyModeFilter" class="lobby-mode-filter">${lobbyModeFilterOptionsHtml()}</select>
+      </div>
+      <p class="meta lobby-sort-note">Сначала показываются почти заполненные лобби. Полные комнаты уходят вниз и недоступны для входа.</p>
       <div class="rooms-frame">${openRoomsHtml()}</div>
     </section>
   `;
@@ -1620,59 +1794,48 @@ function promptPackOptionsHtml(selected = "mixed") {
 }
 
 function renderCreateRoom() {
-  app.classList.add("create-game-card");
+  app.classList.add("create-game-card", "mode-select-card");
+  const modes = Object.values(GAME_MODES);
   app.innerHTML = `
-    <h2 class="panel-title centered-title">Создать игру</h2>
-    <div class="grid">
-      <label class="field"><span>${COPY.settings.rounds}</span><input id="maxRounds" type="number" min="1" max="20" value="5"></label>
-      <label class="field"><span>${COPY.settings.promptTimer}</span><input id="promptSeconds" type="number" min="0" value="60"></label>
-      <label class="field"><span>${COPY.settings.answerTimer}</span><input id="answerSeconds" type="number" min="0" value="60"></label>
-      <label class="field"><span>${COPY.settings.voteTimer}</span><input id="voteSeconds" type="number" min="0" value="30"></label>
-      <label class="field"><span>${COPY.settings.promptMode}</span>
-        <select id="promptMode">
-          <option value="manual">${COPY.settings.promptManual}</option>
-          <option value="auto">${COPY.settings.promptAuto}</option>
-        </select>
-      </label>
-      <label class="field"><span>${COPY.settings.promptPack}</span>
-        <select id="promptPack">${promptPackOptionsHtml()}</select>
-      </label>
-      <div class="grid-span-all">${customPromptPacksHtml()}</div>
-      <label class="field"><span>${COPY.settings.spectatorVoting}</span>
-        <select id="spectatorVoting">
-          <option value="off">${COPY.settings.spectatorOff}</option>
-          <option value="reactions">${COPY.settings.spectatorReactions}</option>
-          <option value="grandFinalOnly">${COPY.settings.spectatorGrandOnly}</option>
-        </select>
-      </label>
-      <label class="field"><span>${COPY.settings.assignmentMode}</span>
-        <select id="assignmentMode">
-          <option value="different">${COPY.settings.assignmentDifferent}</option>
-          <option value="same">${COPY.settings.assignmentSame}</option>
-        </select>
-      </label>
-      <label class="field"><span>${COPY.settings.maxPlayers}</span><input id="maxPlayers" type="number" min="2" max="12" value="6"></label>
-      <label class="check-row"><input id="anonymousMode" type="checkbox"> ${COPY.settings.anonymous}</label>
-      <label class="check-row"><input id="soundsEnabled" type="checkbox" checked> ${COPY.settings.sounds}</label>
-      <label class="check-row"><input id="publicLobby" type="checkbox" checked> ${COPY.settings.publicLobby}</label>
-      <label class="check-row"><input id="spectatorMode" type="checkbox" checked> ${COPY.settings.spectatorMode}</label>
+    <h2 class="panel-title centered-title">Выбери режим игры</h2>
+    <p class="meta centered-meta mode-select-lead">Сначала выбирается режим. После создания лобби режим уже не меняется — можно будет менять только настройки.</p>
+    <div class="mode-grid">
+      ${modes.map((mode) => `
+        <article class="mode-card ${mode.enabled ? "" : "disabled-mode"}">
+          <div class="mode-card-top">
+            <span class="mode-status">${escapeHtml(mode.status)}</span>
+            <span class="mode-min">${mode.minPlayers}+ игрока</span>
+          </div>
+          <h3>${escapeHtml(mode.title)}</h3>
+          <p>${escapeHtml(mode.description)}</p>
+          <div class="mode-tags">${mode.tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}</div>
+          <button class="btn ${mode.enabled ? "primary" : "ghost"}" data-action="create-mode-room" data-mode="${escapeHtml(mode.id)}" ${mode.enabled ? "" : "disabled"}>${mode.enabled ? "Создать в этом режиме" : "Скоро"}</button>
+        </article>
+      `).join("")}
     </div>
     <div class="actions create-actions">
-      <button class="btn primary" data-action="create-room">Создать лобби</button>
       <button class="btn ghost" data-route="home">Назад</button>
     </div>
   `;
 }
 
 function roomSettingsFormHtml(room = null) {
+  const mode = gameModeInfo(room?.gameMode || "classic_pairs");
   const maxRounds = room?.maxRounds ?? DEFAULT_ROOM_SETTINGS.maxRounds;
   const timers = room?.timers || DEFAULT_ROOM_SETTINGS;
   const settings = room?.settings || DEFAULT_ROOM_SETTINGS;
+  const isShared = mode.id === "shared_prompt";
 
   return `
     <div class="settings-editor">
+      <div class="mode-readonly-card">
+        <span class="bento-kicker">${COPY.settings.fixedGameMode}</span>
+        <strong>${escapeHtml(mode.title)}</strong>
+        <p class="meta">${COPY.settings.fixedGameModeHint}</p>
+      </div>
+
       <div class="grid compact-grid">
-        <label class="field"><span>${COPY.settings.rounds}</span><input id="maxRounds" type="number" min="1" max="20" value="${maxRounds}"></label>
+        <label class="field rounds-field"><span>${COPY.settings.rounds}</span><input id="maxRounds" type="number" min="1" max="20" value="${maxRounds}"><small class="field-hint shared-rounds-hint">${isShared ? COPY.settings.sharedRoundsHint : ""}</small></label>
         <label class="field"><span>${COPY.settings.maxPlayers}</span><input id="maxPlayers" type="number" min="2" max="12" value="${settings.maxPlayers}"></label>
         <label class="field"><span>${COPY.settings.promptTimer}</span><input id="promptSeconds" type="number" min="0" value="${timers.promptSeconds}"></label>
         <label class="field"><span>${COPY.settings.answerTimer}</span><input id="answerSeconds" type="number" min="0" value="${timers.answerSeconds}"></label>
@@ -1690,12 +1853,6 @@ function roomSettingsFormHtml(room = null) {
             <option value="off" ${settings.spectatorVoting === "off" ? "selected" : ""}>${COPY.settings.spectatorOff}</option>
             <option value="reactions" ${settings.spectatorVoting === "reactions" ? "selected" : ""}>${COPY.settings.spectatorReactions}</option>
             <option value="grandFinalOnly" ${settings.spectatorVoting === "grandFinalOnly" ? "selected" : ""}>${COPY.settings.spectatorGrandOnly}</option>
-          </select>
-        </label>
-        <label class="field"><span>${COPY.settings.assignmentMode}</span>
-          <select id="assignmentMode">
-            <option value="different" ${settings.assignmentMode === "different" ? "selected" : ""}>${COPY.settings.assignmentDifferent}</option>
-            <option value="same" ${settings.assignmentMode === "same" ? "selected" : ""}>${COPY.settings.assignmentSame}</option>
           </select>
         </label>
       </div>
@@ -1738,12 +1895,16 @@ function promptPackLabel(value) {
 }
 
 function settingsSummary(room) {
-  const promptMode = room.settings.promptMode === "auto" ? "Игра предлагает начала" : "Свои начала от игроков";
-  const assignmentMode = room.settings.assignmentMode === "same" ? "все добивают одну фразу" : "каждый добивает чужую фразу";
+  const mode = gameModeInfo(room.gameMode);
+  const promptMode = room.settings.promptMode === "auto" ? "готовые начала" : "начала от игроков";
+  const roundsText = room.gameMode === "shared_prompt" && room.settings.promptMode === "manual"
+    ? `${room.sharedPromptCollectionComplete ? room.maxRounds : "по количеству начал"} раундов · максимум игроков: ${room.settings.maxPlayers}`
+    : `${room.maxRounds} раундов · максимум игроков: ${room.settings.maxPlayers}`;
   return `
     <ul class="settings-list">
-      <li>${room.maxRounds} раундов · максимум игроков: ${room.settings.maxPlayers}</li>
-      <li>${promptMode} · ${assignmentMode}</li>
+      <li><strong>Режим:</strong> ${escapeHtml(mode.title)}</li>
+      <li>${roundsText}</li>
+      <li>Источник начал: ${promptMode}</li>
       <li>Пак начал: ${escapeHtml(promptPackLabel(room.settings.promptPack || "mixed"))} · зрители: ${room.settings.spectatorMode === false ? "выкл" : "вкл"}</li>
       <li>Таймеры: начало ${room.timers.promptSeconds}с · концовка ${room.timers.answerSeconds}с · голосование ${room.timers.voteSeconds}с</li>
     </ul>
@@ -1797,7 +1958,7 @@ function playersHtml() {
       <div class="role-list role-drop-zone" data-drop-role="spectator">
         <div class="role-list-head"><span>Зрители</span><span>${spectators.filter((player) => player.connected).length}</span></div>
         <div class="players spectators-list">
-          ${spectators.length ? spectators.map((player) => playerPillHtml(player, "spectator")).join("") : `<p class="meta empty-role">Можно перетащить игрока сюда.</p>`}
+          ${spectators.length ? spectators.map((player) => playerPillHtml(player, "spectator")).join("") : `<p class="meta empty-role">${isHost() ? "Можно перетащить игрока сюда." : "Зрителей нет."}</p>`}
         </div>
       </div>
       ${canChoose ? `
@@ -1917,7 +2078,7 @@ function roomControlsHtml() {
     statusNote = `<span class="meta room-controls-note">${COPY.messages.hostDecision}</span>`;
   }
 
-  if (currentRoom.state === "prompting") {
+  if (["prompting", "collectingSharedPrompts"].includes(currentRoom.state)) {
     const submitted = hasSubmittedPrompt();
     if (!submitted || promptEditMode) {
       primaryAction = `<button class="btn primary" data-action="submit-prompt">${submitted ? COPY.buttons.updatePrompt : COPY.buttons.submitPrompt}</button>`;
@@ -2036,6 +2197,7 @@ function spectatorStateText() {
     waiting: "Лобби собирается. Можно показать QR друзьям или ждать старта.",
     starting: "Игра скоро начнётся. Зритель смотрит, но не занимает место игрока.",
     prompting: "Игроки придумывают начала фраз.",
+    collectingSharedPrompts: "Каждый игрок пишет одно начало. Потом каждое начало станет отдельным раундом.",
     answering: "Игроки добивают фразы.",
     revealing: "Шутки раскрываются.",
     voting: "Игроки голосуют за смешные варианты.",
@@ -2087,26 +2249,31 @@ function renderSpectator() {
   `;
 }
 
-function renderPrompting() {
+function renderPrompting({ sharedCollection = false } = {}) {
   const submitted = hasSubmittedPrompt();
   const myPrompt = getMyPrompt();
   const draft = getPromptDraft();
   const audio = getPromptAudioDraft();
-  const connectedCount = currentRoom.players.filter((p) => p.connected).length;
+  const connectedCount = activeLobbyPlayers().filter((p) => p.connected).length;
   const isEditing = !submitted || promptEditMode;
+  const title = sharedCollection ? "Собираем начала" : `Раунд ${currentRoom.round} · Кинь начало`;
+  const lead = sharedCollection
+    ? "Каждый пишет одно начало. Потом каждое начало станет отдельным раундом, и все будут добивать его по очереди."
+    : "Придумайте начало фразы для другого игрока.";
   app.classList.add("game-stage-card", "compact-game-stage-card");
   app.innerHTML = `
     <div class="game-stage input-stage">
-      ${stageTitle(`Раунд ${currentRoom.round} · Кинь начало`)}
+      ${stageTitle(title, sharedCollection ? "режим: одна фраза на всех" : "")}
       <section class="input-stage-panel no-shell-panel">
         ${timerHtml()}
+        <p class="meta centered-meta shared-mode-lead">${escapeHtml(lead)}</p>
         ${isEditing ? `
           <textarea id="promptInput" maxlength="160" placeholder="${COPY.placeholders.prompt}">${escapeHtml(draft)}</textarea>
           ${audioInputHtml("prompt")}
         ` : submittedBlockHtml({ type: "prompt", text: myPrompt?.text || "", audio: myPrompt?.audio || null })}
         <div class="progress-card">
           <h3 class="section-title">${COPY.labels.progress}</h3>
-          <p class="meta">${currentRoom.prompts.length} из ${connectedCount} кинули начало. ${randomWaitingMessage(currentRoom.prompts.length)}</p>
+          <p class="meta">${currentRoom.prompts.length} из ${connectedCount} отправили начало. ${sharedCollection ? `Раундов будет: ${Math.max(1, currentRoom.prompts.length)}.` : randomWaitingMessage(currentRoom.prompts.length)}</p>
         </div>
       </section>
     </div>
@@ -2123,10 +2290,13 @@ function renderAnswering() {
   const connectedCount = currentRoom.players.filter((p) => p.connected).length;
   const isEditing = !submitted || answerEditMode;
 
+  const sharedMode = currentRoom.gameMode === "shared_prompt";
+  const stageName = sharedMode ? `Раунд ${currentRoom.round} · Все добивают` : "Добей фразу";
+  const eyebrow = sharedMode ? "одна фраза на всех" : "";
   app.classList.add("game-stage-card", "compact-game-stage-card");
   app.innerHTML = `
     <div class="game-stage input-stage">
-      ${stageTitle("Добей фразу")}
+      ${stageTitle(stageName, eyebrow)}
       <section class="input-stage-panel no-shell-panel">
         ${timerHtml()}
         <div class="prompt-box stage-prompt">
@@ -2553,7 +2723,7 @@ function render() {
   );
   document.body.classList.toggle("create-screen", !currentRoom && currentScreen === "create");
   document.body.classList.toggle("waiting-screen", Boolean(currentRoom && currentRoom.state === "waiting"));
-  document.body.classList.toggle("stage-screen", Boolean(currentRoom && ["starting", "prompting", "answering", "revealing", "voting"].includes(currentRoom.state)));
+  document.body.classList.toggle("stage-screen", Boolean(currentRoom && ["starting", "collectingSharedPrompts", "prompting", "answering", "revealing", "voting"].includes(currentRoom.state)));
   document.body.classList.toggle("scoreboard-screen", Boolean(currentRoom && ["scoreboard", "grandVoting", "finished"].includes(currentRoom.state)));
   document.body.classList.toggle("has-room-controls", Boolean(currentRoom));
   if (!currentRoom) {
@@ -2595,6 +2765,7 @@ function render() {
   }
   if (state === "waiting") renderWaiting();
   if (state === "starting") renderStarting();
+  if (state === "collectingSharedPrompts") renderPrompting({ sharedCollection: true });
   if (state === "prompting") renderPrompting();
   if (state === "answering") renderAnswering();
   if (state === "revealing") renderRevealing();
@@ -2644,7 +2815,6 @@ function readSettings() {
     customPromptPacks: loadCustomPromptPacks(),
     spectatorMode: document.getElementById("spectatorMode")?.checked ?? DEFAULT_ROOM_SETTINGS.spectatorMode,
     spectatorVoting: document.getElementById("spectatorVoting")?.value ?? DEFAULT_ROOM_SETTINGS.spectatorVoting,
-    assignmentMode: document.getElementById("assignmentMode")?.value ?? DEFAULT_ROOM_SETTINGS.assignmentMode,
     maxPlayers: document.getElementById("maxPlayers")?.value ?? DEFAULT_ROOM_SETTINGS.maxPlayers,
     publicLobby: document.getElementById("publicLobby")?.checked ?? DEFAULT_ROOM_SETTINGS.publicLobby
   };
@@ -2652,6 +2822,11 @@ function readSettings() {
 
 
 document.addEventListener("input", (event) => {
+  if (event.target?.id === "lobbySearchInput") {
+    lobbySearchQuery = event.target.value || "";
+    render();
+    return;
+  }
   if (!currentRoom) return;
   if (event.target?.id === "promptInput") {
     inputDrafts.prompts[promptDraftKey()] = event.target.value;
@@ -2733,7 +2908,7 @@ document.addEventListener("click", (event) => {
     "copy-best",
     "copy-history",
 
-    "create-room",
+    "create-mode-room",
     "join-room",
     "join-open-room",
     "join-invite",
@@ -2765,6 +2940,16 @@ document.addEventListener("click", (event) => {
 
   if (shouldPlayGenericClick) {
     playSound("click");
+  }
+
+  if (event.target?.id === "settingsModal") {
+    requestCloseSettingsModal();
+    return;
+  }
+
+  if (event.target?.id === "settingsDiscardConfirm") {
+    document.getElementById("settingsDiscardConfirm")?.remove();
+    return;
   }
 
   if (routeButton) {
@@ -2912,18 +3097,31 @@ document.addEventListener("click", (event) => {
     return;
   }
 
-  if (action === "create-room") {
-    const settings = readSettings();
-    if (!validateSettingsForSubmit(settings)) return;
+  if (action === "create-mode-room") {
+    const modeId = button.dataset.mode || "classic_pairs";
+    const mode = gameModeInfo(modeId);
+    if (!mode.enabled) return showToast("Этот режим будет в следующем патче.");
+    const settings = { ...DEFAULT_ROOM_SETTINGS, customPromptPacks: loadCustomPromptPacks() };
     ensureNameThen(() => {
-      socket.emit("createRoom", { name: myName, sessionId, settings });
+      socket.emit("createRoom", { name: myName, sessionId, gameMode: modeId, settings });
     });
   }
 
   if (action === "toggle-settings") {
-    lobbySettingsOpen = !lobbySettingsOpen;
-    if (lobbySettingsOpen) renderSettingsModal();
-    else closeSettingsModal();
+    if (lobbySettingsOpen) requestCloseSettingsModal();
+    else openSettingsModal();
+  }
+
+  if (action === "close-settings") {
+    requestCloseSettingsModal();
+  }
+
+  if (action === "continue-settings-edit") {
+    document.getElementById("settingsDiscardConfirm")?.remove();
+  }
+
+  if (action === "discard-settings-changes") {
+    closeSettingsModal();
   }
 
   if (action === "save-lobby-settings") {
@@ -2942,7 +3140,10 @@ document.addEventListener("click", (event) => {
   }
 
   if (action === "join-open-room") {
+    if (button.disabled) return;
     const code = button.dataset.roomCode;
+    const room = openRooms.find((item) => item.code === code);
+    if (room?.isFull || (room && room.playersCount >= room.maxPlayers)) return showToast("Лобби заполнено.");
     ensureNameThen(() => {
       socket.emit("joinRoom", { name: myName, code, sessionId });
     });
