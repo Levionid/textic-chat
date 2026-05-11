@@ -4622,3 +4622,426 @@ body.has-room-controls .toast {
     display: none !important;
   }
 }
+
+/* === Patch 18: full-width voice waveform + compact submitted audio/text layout === */
+.voice-message {
+  width: 100% !important;
+}
+
+.voice-body {
+  flex: 1 1 auto !important;
+}
+
+.voice-wave,
+.voice-wave[data-voice-seek] {
+  flex: 1 1 auto !important;
+  justify-content: space-between !important;
+  padding-inline: 1px !important;
+}
+
+.voice-wave span,
+.voice-wave[data-voice-seek] span {
+  flex: 0 0 clamp(3px, 0.34vw, 4px) !important;
+  width: clamp(3px, 0.34vw, 4px) !important;
+  min-width: 3px !important;
+}
+
+.audio-current .voice-message:not(.voice-message-compact) {
+  grid-template-columns: 46px minmax(0, 1fr) !important;
+}
+
+.submitted-draft-card {
+  width: min(760px, 100%) !important;
+  max-width: 760px !important;
+  overflow: hidden !important;
+}
+
+.submitted-draft-content {
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+.submitted-draft-card.has-audio.has-text .submitted-draft-content,
+.submitted-draft-card.only-audio .submitted-draft-content {
+  grid-template-columns: minmax(0, 1fr) !important;
+  align-items: stretch !important;
+  gap: 10px !important;
+}
+
+.submitted-draft-card.has-audio .submitted-draft-text {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-height: 0 !important;
+  max-height: 92px !important;
+  display: block !important;
+  overflow: auto !important;
+  padding: 9px 12px !important;
+  font-size: clamp(14px, 1.25vw, 16px) !important;
+  line-height: 1.24 !important;
+  word-break: break-word !important;
+  overflow-wrap: anywhere !important;
+}
+
+.submitted-draft-card.has-audio .voice-message,
+.submitted-draft-card.has-audio .voice-message-compact {
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  grid-template-columns: 34px minmax(0, 1fr) auto !important;
+  min-height: 46px !important;
+  padding: 7px 10px !important;
+  gap: 9px !important;
+}
+
+.submitted-draft-card.has-audio .voice-play,
+.submitted-draft-card.has-audio .voice-message-compact .voice-play {
+  width: 34px !important;
+  height: 34px !important;
+  font-size: 12px !important;
+}
+
+.submitted-draft-card.has-audio .voice-wave,
+.submitted-draft-card.has-audio .voice-wave[data-voice-seek] {
+  width: 100% !important;
+  height: 18px !important;
+  min-height: 18px !important;
+  justify-content: space-between !important;
+  gap: 0 !important;
+}
+
+.submitted-draft-card.has-audio .voice-wave span,
+.submitted-draft-card.has-audio .voice-wave[data-voice-seek] span {
+  flex: 0 0 3px !important;
+  width: 3px !important;
+  min-width: 3px !important;
+  height: max(5px, calc(var(--bar-h, 16px) * 0.62)) !important;
+}
+
+.submitted-draft-card.has-audio .voice-meta-row {
+  align-items: center !important;
+}
+
+.submitted-draft-card.has-audio .voice-time {
+  font-size: 10.5px !important;
+  line-height: 1 !important;
+}
+
+.submitted-draft-card.has-audio .voice-kind {
+  align-self: end !important;
+  padding-left: 4px !important;
+  font-size: 10px !important;
+  opacity: 0.56 !important;
+}
+
+@media (max-width: 720px) {
+  .voice-wave,
+  .voice-wave[data-voice-seek] {
+    justify-content: space-between !important;
+  }
+
+  .voice-wave span:nth-child(n+40) {
+    display: none !important;
+  }
+
+  .submitted-draft-card.has-audio .voice-message,
+  .submitted-draft-card.has-audio .voice-message-compact {
+    grid-template-columns: 34px minmax(0, 1fr) !important;
+  }
+
+  .submitted-draft-card.has-audio .submitted-draft-text {
+    max-height: 110px !important;
+  }
+}
+
+@media (max-width: 430px) {
+  .voice-wave span:nth-child(n+32) {
+    display: none !important;
+  }
+}
+
+/* === Patch 19: expand "Лучшие шутки" downward instead of inner scrolling === */
+.history-disclosure {
+  overflow: visible !important;
+}
+
+.history-disclosure.is-open {
+  overflow: visible !important;
+}
+
+.history-disclosure.is-open .history-summary {
+  position: relative !important;
+  top: auto !important;
+}
+
+.history-disclosure.is-open .history-body,
+.scoreboard-stage .history-disclosure.is-open .history-body,
+.game-stage .history-disclosure.is-open .history-body,
+.final-stage .history-disclosure.is-open .history-body {
+  max-height: none !important;
+  height: auto !important;
+  overflow: visible !important;
+  overscroll-behavior: auto !important;
+  scrollbar-width: auto !important;
+}
+
+.history-disclosure.is-open .history-body::-webkit-scrollbar,
+.scoreboard-stage .history-disclosure.is-open .history-body::-webkit-scrollbar,
+.game-stage .history-disclosure.is-open .history-body::-webkit-scrollbar,
+.final-stage .history-disclosure.is-open .history-body::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+}
+
+.history-disclosure.is-open .compact-history,
+.history-disclosure.is-open .history-preview {
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+.history-disclosure.is-open .compact-history .joke,
+.history-disclosure.is-open .history-preview .joke,
+.history-disclosure.is-open .compact-history .compact-joke,
+.history-disclosure.is-open .history-preview .compact-joke {
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+@media (max-width: 620px) {
+  .history-disclosure.is-open .history-body,
+  .scoreboard-stage .history-disclosure.is-open .history-body,
+  .game-stage .history-disclosure.is-open .history-body,
+  .final-stage .history-disclosure.is-open .history-body {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+}
+
+/* Patch 20: party-mode mobile, QR, spectator and share cards */
+.party-home-menu {
+  gap: 14px;
+}
+
+.party-mode-hint {
+  width: min(430px, 100%);
+  margin: 4px auto 0;
+  text-align: center;
+  line-height: 1.45;
+}
+
+.lobby-qr-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin: 16px 0 0;
+}
+
+.qr-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid rgba(247, 241, 232, 0.12);
+  border-radius: 24px;
+  background: rgba(24, 24, 33, 0.74);
+  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.18);
+}
+
+.qr-image {
+  width: 112px;
+  height: 112px;
+  border-radius: 18px;
+  padding: 8px;
+  background: #f7f1e8;
+  display: block;
+}
+
+.qr-url {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: rgba(10, 10, 16, 0.78);
+  border: 1px solid rgba(247, 241, 232, 0.08);
+  color: var(--text);
+  font-weight: 800;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spectator-entry-card .room-code,
+.invite-route-code .room-code {
+  letter-spacing: 0.12em;
+}
+
+.spectator-stage-card {
+  width: min(840px, 100%);
+}
+
+.spectator-panel {
+  width: min(760px, 100%);
+  margin-inline: auto;
+}
+
+.spectator-reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.reaction-btn {
+  min-width: 52px;
+  height: 52px;
+  border-radius: 18px;
+  border: 1px solid rgba(247, 241, 232, 0.14);
+  background: rgba(32, 32, 42, 0.92);
+  color: var(--text);
+  font-size: 24px;
+  box-shadow: 0 12px 24px rgba(0,0,0,0.18);
+}
+
+.reaction-btn:active {
+  transform: translateY(1px) scale(0.98);
+}
+
+.spectator-controls .room-controls-note {
+  color: var(--muted);
+}
+
+.btn[data-action="share-history"],
+.btn[data-action="share-grand-joke"] {
+  border-color: rgba(78, 205, 196, 0.28);
+}
+
+@media (max-width: 860px) {
+  .lobby-qr-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .qr-card {
+    grid-template-columns: 92px minmax(0, 1fr);
+  }
+
+  .qr-image {
+    width: 92px;
+    height: 92px;
+    border-radius: 16px;
+  }
+}
+
+@media (max-width: 720px) {
+  body {
+    animation: none;
+    background-attachment: fixed;
+  }
+
+  .app {
+    width: min(100% - 20px, 520px);
+  }
+
+  body.home-screen .app,
+  body.simple-screen .app,
+  body.waiting-screen .app {
+    min-height: 100svh;
+    align-content: center;
+    padding-block: max(14px, env(safe-area-inset-top)) max(92px, env(safe-area-inset-bottom));
+  }
+
+  .hero h1,
+  .game-stage-title,
+  .panel-title {
+    letter-spacing: -0.05em;
+  }
+
+  .simple-menu .menu-btn,
+  .btn.primary.menu-btn,
+  .btn.ghost.menu-btn {
+    width: min(100%, 360px);
+    min-height: 58px;
+    font-size: 18px;
+    border-radius: 22px;
+  }
+
+  .waiting-room,
+  .game-stage,
+  .scoreboard-stage,
+  .final-stage {
+    width: 100%;
+  }
+
+  .invite-panel,
+  .waiting-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .invite-code-block,
+  .invite-link-block,
+  .bento-card,
+  .stage-panel,
+  .progress-card,
+  .submitted-draft-card,
+  .audio-tools,
+  textarea,
+  .prompt-box {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .invite-actions,
+  .actions {
+    gap: 10px;
+  }
+
+  .invite-actions .btn,
+  .actions .btn {
+    min-height: 48px;
+  }
+
+  .qr-card {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    text-align: center;
+  }
+
+  .qr-image {
+    width: 160px;
+    height: 160px;
+  }
+
+  .game-stage-header {
+    margin-bottom: 16px;
+  }
+
+  .input-stage-panel {
+    gap: 14px;
+  }
+
+  .spectator-reactions {
+    justify-content: center;
+  }
+
+  .reaction-btn {
+    min-width: 56px;
+    height: 56px;
+  }
+}
+
+@media (max-width: 430px) {
+  .qr-image {
+    width: 136px;
+    height: 136px;
+  }
+
+  .qr-url {
+    font-size: 11px;
+  }
+
+  .reaction-btn {
+    min-width: 48px;
+    height: 48px;
+    border-radius: 16px;
+    font-size: 21px;
+  }
+}

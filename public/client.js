@@ -24,7 +24,8 @@ const ROUTES = {
   create: "/create",
   join: "/join-game",
   lobbies: "/lobbies",
-  code: "/join-code"
+  code: "/join-code",
+  watch: "/watch"
 };
 
 const DEFAULT_ROOM_SETTINGS = {
@@ -35,6 +36,9 @@ const DEFAULT_ROOM_SETTINGS = {
   anonymousMode: false,
   soundsEnabled: true,
   promptMode: "manual",
+  promptPack: "mixed",
+  spectatorMode: true,
+  spectatorVoting: "off",
   assignmentMode: "different",
   maxPlayers: 6,
   publicLobby: true
@@ -87,6 +91,10 @@ const COPY = {
     createRoom: "Создать лобби",
     copyCode: "Скопировать код",
     copyInvite: "Скопировать ссылку",
+    copyWatch: "Ссылка зрителя",
+    shareInvite: "Поделиться",
+    shareCard: "Share-картинка",
+    joinSpectator: "Войти зрителем",
     editSettings: "Изменить настройки",
     saveSettings: "Сохранить",
     cancelSettings: "Отмена",
@@ -144,6 +152,24 @@ const COPY = {
     promptMode: "Режим начал",
     promptManual: "Игроки сами кидают начала",
     promptAuto: "Игра предлагает начала автоматически",
+    promptMixed: "Игроки + готовые начала",
+    promptPack: "Пак готовых начал с никами",
+    packMixed: "Микс под компанию",
+    packUniversal: "Универсальные",
+    packFriends: "Для друзей",
+    packSchool: "Школа / универ",
+    packWork: "Работа / офис",
+    packGaming: "Игры / Discord",
+    packParty: "Вечеринка",
+    packFamily: "Семья",
+    packAbsurd: "Абсурд",
+    packKz: "Казахстан / локальные",
+    packSoftRoast: "Мягкий roast",
+    spectatorMode: "Разрешить режим зрителя",
+    spectatorVoting: "Голос зрителей",
+    spectatorOff: "Зрители только смотрят",
+    spectatorReactions: "Зрители ставят реакции",
+    spectatorGrandOnly: "Зрители голосуют только в финале",
     assignmentMode: "Как раздаем фразы",
     assignmentDifferent: "Каждый добивает чужую фразу",
     assignmentSame: "Все добивают одну и ту же фразу",
@@ -193,6 +219,9 @@ const COPY = {
     fileReadFailed: "Не получилось прочитать аудиофайл.",
     voteSubmitted: "Голос принят. Ждем остальных.",
     grandVoteSubmitted: "Финальный голос принят. Собираем итоги вечера.",
+    spectatorJoined: "Вы вошли зрителем. Можно смотреть, реагировать и не занимать место игрока.",
+    shareFailed: "Не получилось открыть системное меню. Скачал картинку.",
+    shareReady: "Share-картинка готова.",
     hostStartsVoting: "Ждем, пока хост запустит голосование.",
     hostDecision: "Хост выбирает следующий шаг.",
     hostCanRestart: "Хост может вернуть всех в лобби.",
@@ -214,6 +243,7 @@ const COPY = {
 };
 
 let currentRoom = null;
+let viewerMode = /^\/watch\//.test(location.pathname);
 let currentScreen = screenFromPath(location.pathname);
 let myName = localStorage.getItem(STORAGE_KEYS.playerName) || "";
 let previousState = null;
@@ -248,6 +278,7 @@ function screenFromPath(pathname) {
   if (pathname === ROUTES.join) return "join";
   if (pathname === ROUTES.lobbies) return "lobbies";
   if (pathname === ROUTES.code) return "code";
+  if (/^\/watch\/[a-zA-Z0-9]{4,8}\/?$/.test(pathname)) return "watch";
   if (/^\/(?:join|lobby|game)\/[a-zA-Z0-9]{4,8}\/?$/.test(pathname)) return "invite";
   if (pathname === "/game-started") return "inviteBlocked";
   if (pathname === "/lobby-not-found") return "lobbyMissing";
@@ -255,11 +286,12 @@ function screenFromPath(pathname) {
 }
 
 function roomCodeFromPath(pathname) {
-  const match = pathname.match(/^\/(?:join|lobby|game)\/([a-zA-Z0-9]{4,8})\/?$/);
+  const match = pathname.match(/^\/(?:join|lobby|game|watch)\/([a-zA-Z0-9]{4,8})\/?$/);
   return match ? match[1].toUpperCase() : null;
 }
 
 function navigateTo(screen, { replace = false } = {}) {
+  viewerMode = screen === "watch";
   currentScreen = screen;
   routeRoomCode = roomCodeFromPath(location.pathname);
   const path = ROUTES[screen] || ROUTES.home;
@@ -277,6 +309,7 @@ function setRoute(path, { replace = false } = {}) {
   const method = replace ? "replaceState" : "pushState";
   history[method]({ screen: screenFromPath(path) }, "", path);
   currentScreen = screenFromPath(path);
+  viewerMode = currentScreen === "watch";
   routeRoomCode = roomCodeFromPath(path);
 }
 
@@ -287,6 +320,28 @@ function pathForRoom(room) {
 
 function inviteLink(code) {
   return `${location.origin}/join/${code}`;
+}
+
+function watchLink(code) {
+  return `${location.origin}/watch/${code}`;
+}
+
+function qrUrl(value, size = 220) {
+  return `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&margin=10&data=${encodeURIComponent(value)}`;
+}
+
+function qrImageHtml(value, label = "QR для входа") {
+  const safeValue = escapeHtml(value);
+  return `
+    <div class="qr-card">
+      <img class="qr-image" src="${qrUrl(value)}" alt="${escapeHtml(label)}" loading="lazy">
+      <div>
+        <span class="bento-kicker">${escapeHtml(label)}</span>
+        <p class="meta">Наведи камеру телефона — ссылка откроет лобби.</p>
+        <div class="qr-url">${safeValue}</div>
+      </div>
+    </div>
+  `;
 }
 
 function getOrCreateSessionId() {
@@ -920,6 +975,166 @@ function copyWithButtonFeedback(text, button) {
   });
 }
 
+
+function findGrandJoke(jokeId) {
+  const summaryWinners = currentRoom?.finalSummary?.grandFinal?.winners || [];
+  const grandWinners = currentRoom?.grandFinal?.winners || [];
+  const candidates = currentRoom?.grandFinal?.candidates || [];
+  return [...summaryWinners, ...grandWinners, ...candidates].find((joke) => joke.jokeId === jokeId || joke.answerId === jokeId) || null;
+}
+
+function wrapCanvasText(ctx, text, x, y, maxWidth, lineHeight, maxLines = 8) {
+  const words = String(text || "").split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = "";
+  for (const word of words) {
+    const test = line ? `${line} ${word}` : word;
+    if (ctx.measureText(test).width <= maxWidth) {
+      line = test;
+    } else {
+      if (line) lines.push(line);
+      line = word;
+    }
+  }
+  if (line) lines.push(line);
+  const clipped = lines.slice(0, maxLines);
+  if (lines.length > maxLines) clipped[maxLines - 1] = `${clipped[maxLines - 1].replace(/\.{3}$/g, "")}...`;
+  clipped.forEach((item, index) => ctx.fillText(item, x, y + index * lineHeight));
+  return y + clipped.length * lineHeight;
+}
+
+function buildShareCanvas(joke, { label = "Шутка вечера" } = {}) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1080;
+  canvas.height = 1920;
+  const ctx = canvas.getContext("2d");
+  const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+  gradient.addColorStop(0, "#231724");
+  gradient.addColorStop(0.55, "#101017");
+  gradient.addColorStop(1, "#12313a");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.fillStyle = "rgba(255, 107, 107, 0.18)";
+  ctx.beginPath(); ctx.arc(120, 120, 260, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "rgba(78, 205, 196, 0.14)";
+  ctx.beginPath(); ctx.arc(970, 120, 240, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "rgba(255, 209, 102, 0.10)";
+  ctx.beginPath(); ctx.arc(540, 1760, 340, 0, Math.PI * 2); ctx.fill();
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#f7f1e8";
+  ctx.font = "900 82px Arial, sans-serif";
+  ctx.fillText("Добей фразу", 540, 185);
+
+  ctx.font = "800 34px Arial, sans-serif";
+  ctx.fillStyle = "#ffd166";
+  ctx.fillText(label, 540, 255);
+
+  const cardX = 90;
+  const cardY = 390;
+  const cardW = 900;
+  const cardH = 960;
+  ctx.fillStyle = "rgba(30, 30, 42, 0.92)";
+  ctx.strokeStyle = "rgba(247, 241, 232, 0.16)";
+  ctx.lineWidth = 3;
+  roundRect(ctx, cardX, cardY, cardW, cardH, 46, true, true);
+
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#aaa4b5";
+  ctx.font = "800 28px Arial, sans-serif";
+  ctx.fillText(`Раунд ${joke.round || ""}`, cardX + 58, cardY + 80);
+
+  ctx.fillStyle = "#f7f1e8";
+  ctx.font = "900 48px Arial, sans-serif";
+  let y = cardY + 165;
+  y = wrapCanvasText(ctx, joke.promptText || (joke.promptAudio ? "[голосовое начало]" : "Голосовое начало"), cardX + 58, y, cardW - 116, 62, 7) + 34;
+
+  ctx.strokeStyle = "#ff6b6b";
+  ctx.lineWidth = 8;
+  ctx.beginPath();
+  ctx.moveTo(cardX + 62, y + 6);
+  ctx.lineTo(cardX + 62, y + 150);
+  ctx.stroke();
+
+  ctx.fillStyle = "#f7f1e8";
+  ctx.font = "500 38px Arial, sans-serif";
+  y = wrapCanvasText(ctx, joke.answerText || (joke.answerAudio ? "[голосовая концовка]" : "Голосовая концовка"), cardX + 90, y + 48, cardW - 150, 52, 9);
+
+  const author = joke.authorName || [joke.promptAuthorName, joke.answerAuthorName].filter(Boolean).join(" + ") || "компания друзей";
+  ctx.fillStyle = "rgba(255, 209, 102, 0.12)";
+  roundRect(ctx, 160, 1455, 760, 104, 52, true, false);
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#ffdca0";
+  ctx.font = "800 34px Arial, sans-serif";
+  ctx.fillText(author, 540, 1520);
+
+  ctx.fillStyle = "#aaa4b5";
+  ctx.font = "700 28px Arial, sans-serif";
+  ctx.fillText("textic-chat.onrender.com", 540, 1735);
+  return canvas;
+}
+
+function roundRect(ctx, x, y, width, height, radius, fill, stroke) {
+  const r = Math.min(radius, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + width, y, x + width, y + height, r);
+  ctx.arcTo(x + width, y + height, x, y + height, r);
+  ctx.arcTo(x, y + height, x, y, r);
+  ctx.arcTo(x, y, x + width, y, r);
+  ctx.closePath();
+  if (fill) ctx.fill();
+  if (stroke) ctx.stroke();
+}
+
+function canvasToBlob(canvas) {
+  return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+}
+
+async function shareJokeCard(joke, options = {}) {
+  try {
+    const canvas = buildShareCanvas(joke, options);
+    const blob = await canvasToBlob(canvas);
+    if (!blob) throw new Error("empty image");
+    const file = new File([blob], "dobey-frazu-share.png", { type: "image/png" });
+    const shareData = {
+      title: "Добей фразу",
+      text: "Шутка из игры “Добей фразу”",
+      files: [file]
+    };
+    if (navigator.canShare?.(shareData) && navigator.share) {
+      await navigator.share(shareData);
+      showToast(COPY.messages.shareReady);
+      return;
+    }
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "dobey-frazu-share.png";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    showToast(COPY.messages.shareFailed);
+  } catch (error) {
+    showToast(COPY.messages.shareFailed);
+  }
+}
+
+async function shareInviteLink(code) {
+  const url = inviteLink(code);
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: "Добей фразу", text: "Заходи в лобби", url });
+      return;
+    } catch (error) {
+      // fallback below
+    }
+  }
+  copyText(url);
+}
+
 function ensureNameThen(action) {
   if (myName) {
     action();
@@ -1025,9 +1240,11 @@ function playWinSound() {
 function renderHome() {
   app.classList.add("plain-menu-card");
   app.innerHTML = `
-    <div class="simple-menu">
+    <div class="simple-menu party-home-menu">
       <button class="btn primary menu-btn" data-route="create">Создать игру</button>
       <button class="btn primary menu-btn" data-route="join">Войти в игру</button>
+      <button class="btn ghost menu-btn" data-route="lobbies">Открытые лобби</button>
+      <p class="meta party-mode-hint">Party-mode: крупные кнопки, QR-вход и один экран — одно действие.</p>
     </div>
   `;
 }
@@ -1074,6 +1291,27 @@ function renderInviteJoin() {
       <p class="meta centered-meta">Сейчас попросим ник и добавим вас в лобби, если игра еще не началась.</p>
       <div class="actions">
         <button class="btn primary" data-action="join-invite">${myName ? "Войти в лобби" : "Ввести ник"}</button>
+        <button class="btn ghost" data-action="join-spectator-route">${COPY.buttons.joinSpectator}</button>
+        <button class="btn ghost" data-route="home">Назад</button>
+      </div>
+    </section>
+  `;
+}
+
+
+function renderWatchJoin() {
+  const code = routeRoomCode || "";
+  app.classList.add("plain-menu-card", "code-join-card");
+  app.innerHTML = `
+    <h2 class="panel-title">Режим зрителя</h2>
+    <section class="home-panel code-panel spectator-entry-card">
+      <div class="invite-route-code">
+        <span class="bento-kicker">код лобби</span>
+        <span class="room-code">${escapeHtml(code)}</span>
+      </div>
+      <p class="meta centered-meta">Зритель смотрит игру, видит финал и реакции, но не занимает место игрока.</p>
+      <div class="actions">
+        <button class="btn primary" data-action="join-spectator">${myName ? COPY.buttons.joinSpectator : "Ввести ник"}</button>
         <button class="btn ghost" data-route="home">Назад</button>
       </div>
     </section>
@@ -1141,6 +1379,16 @@ function requestInviteJoin() {
   });
 }
 
+
+function requestSpectatorJoin() {
+  const code = routeRoomCode;
+  if (!code) return navigateTo("home", { replace: true });
+  ensureNameThen(() => {
+    viewerMode = true;
+    socket.emit("joinSpectator", { name: myName, code, sessionId });
+  });
+}
+
 function openRoomsHtml({ compact = false } = {}) {
   if (openRoomsLoading) {
     return `
@@ -1201,6 +1449,24 @@ function renderLobbyBrowser() {
   `;
 }
 
+
+function promptPackOptionsHtml(selected = "mixed") {
+  const options = [
+    ["mixed", COPY.settings.packMixed],
+    ["universal", COPY.settings.packUniversal],
+    ["friends", COPY.settings.packFriends],
+    ["school", COPY.settings.packSchool],
+    ["work", COPY.settings.packWork],
+    ["gaming", COPY.settings.packGaming],
+    ["party", COPY.settings.packParty],
+    ["family", COPY.settings.packFamily],
+    ["absurd", COPY.settings.packAbsurd],
+    ["kz", COPY.settings.packKz],
+    ["softRoast", COPY.settings.packSoftRoast]
+  ];
+  return options.map(([value, label]) => `<option value="${value}" ${selected === value ? "selected" : ""}>${escapeHtml(label)}</option>`).join("");
+}
+
 function renderCreateRoom() {
   app.classList.add("create-game-card");
   app.innerHTML = `
@@ -1216,6 +1482,16 @@ function renderCreateRoom() {
           <option value="auto">${COPY.settings.promptAuto}</option>
         </select>
       </label>
+      <label class="field"><span>${COPY.settings.promptPack}</span>
+        <select id="promptPack">${promptPackOptionsHtml()}</select>
+      </label>
+      <label class="field"><span>${COPY.settings.spectatorVoting}</span>
+        <select id="spectatorVoting">
+          <option value="off">${COPY.settings.spectatorOff}</option>
+          <option value="reactions">${COPY.settings.spectatorReactions}</option>
+          <option value="grandFinalOnly">${COPY.settings.spectatorGrandOnly}</option>
+        </select>
+      </label>
       <label class="field"><span>${COPY.settings.assignmentMode}</span>
         <select id="assignmentMode">
           <option value="different">${COPY.settings.assignmentDifferent}</option>
@@ -1226,6 +1502,7 @@ function renderCreateRoom() {
       <label class="check-row"><input id="anonymousMode" type="checkbox"> ${COPY.settings.anonymous}</label>
       <label class="check-row"><input id="soundsEnabled" type="checkbox" checked> ${COPY.settings.sounds}</label>
       <label class="check-row"><input id="publicLobby" type="checkbox" checked> ${COPY.settings.publicLobby}</label>
+      <label class="check-row"><input id="spectatorMode" type="checkbox" checked> ${COPY.settings.spectatorMode}</label>
     </div>
     <div class="actions create-actions">
       <button class="btn primary" data-action="create-room">Создать лобби</button>
@@ -1253,6 +1530,14 @@ function roomSettingsFormHtml(room = null) {
             <option value="auto" ${settings.promptMode === "auto" ? "selected" : ""}>${COPY.settings.promptAuto}</option>
           </select>
         </label>
+        <label class="field"><span>${COPY.settings.promptPack}</span><select id="promptPack">${promptPackOptionsHtml(settings.promptPack || "mixed")}</select></label>
+        <label class="field"><span>${COPY.settings.spectatorVoting}</span>
+          <select id="spectatorVoting">
+            <option value="off" ${settings.spectatorVoting === "off" ? "selected" : ""}>${COPY.settings.spectatorOff}</option>
+            <option value="reactions" ${settings.spectatorVoting === "reactions" ? "selected" : ""}>${COPY.settings.spectatorReactions}</option>
+            <option value="grandFinalOnly" ${settings.spectatorVoting === "grandFinalOnly" ? "selected" : ""}>${COPY.settings.spectatorGrandOnly}</option>
+          </select>
+        </label>
         <label class="field"><span>${COPY.settings.assignmentMode}</span>
           <select id="assignmentMode">
             <option value="different" ${settings.assignmentMode === "different" ? "selected" : ""}>${COPY.settings.assignmentDifferent}</option>
@@ -1264,6 +1549,7 @@ function roomSettingsFormHtml(room = null) {
         <label class="check-row"><input id="anonymousMode" type="checkbox" ${settings.anonymousMode ? "checked" : ""}> ${COPY.settings.anonymous}</label>
         <label class="check-row"><input id="soundsEnabled" type="checkbox" ${settings.soundsEnabled ? "checked" : ""}> ${COPY.settings.sounds}</label>
         <label class="check-row"><input id="publicLobby" type="checkbox" ${settings.publicLobby ? "checked" : ""}> ${COPY.settings.publicLobby}</label>
+        <label class="check-row"><input id="spectatorMode" type="checkbox" ${settings.spectatorMode !== false ? "checked" : ""}> ${COPY.settings.spectatorMode}</label>
       </div>
       <div class="settings-editor-actions">
         <button class="btn primary compact-btn" data-action="save-lobby-settings">${COPY.buttons.saveSettings}</button>
@@ -1273,6 +1559,24 @@ function roomSettingsFormHtml(room = null) {
   `;
 }
 
+
+function promptPackLabel(value) {
+  const labels = {
+    mixed: COPY.settings.packMixed,
+    universal: COPY.settings.packUniversal,
+    friends: COPY.settings.packFriends,
+    school: COPY.settings.packSchool,
+    work: COPY.settings.packWork,
+    gaming: COPY.settings.packGaming,
+    party: COPY.settings.packParty,
+    family: COPY.settings.packFamily,
+    absurd: COPY.settings.packAbsurd,
+    kz: COPY.settings.packKz,
+    softRoast: COPY.settings.packSoftRoast
+  };
+  return labels[value] || labels.mixed;
+}
+
 function settingsSummary(room) {
   const promptMode = room.settings.promptMode === "auto" ? "Игра предлагает начала" : "Свои начала от игроков";
   const assignmentMode = room.settings.assignmentMode === "same" ? "все добивают одну фразу" : "каждый добивает чужую фразу";
@@ -1280,6 +1584,7 @@ function settingsSummary(room) {
     <ul class="settings-list">
       <li>${room.maxRounds} раундов · максимум игроков: ${room.settings.maxPlayers}</li>
       <li>${promptMode} · ${assignmentMode}</li>
+      <li>Пак начал: ${escapeHtml(promptPackLabel(room.settings.promptPack || "mixed"))} · зрители: ${room.settings.spectatorMode === false ? "выкл" : "вкл"}</li>
       <li>Таймеры: начало ${room.timers.promptSeconds}с · концовка ${room.timers.answerSeconds}с · голосование ${room.timers.voteSeconds}с</li>
     </ul>
   `;
@@ -1306,6 +1611,7 @@ function playersHtml() {
 function renderWaiting() {
   const onlineCount = currentRoom.players.filter((player) => player.connected).length;
   const link = inviteLink(currentRoom.code);
+  const spectatorLink = watchLink(currentRoom.code);
   app.classList.add("waiting-room-card");
   app.innerHTML = `
     <div class="lobby-shell waiting-room">
@@ -1327,9 +1633,16 @@ function renderWaiting() {
           <div class="invite-url">${escapeHtml(link)}</div>
           <div class="actions invite-actions">
             <button class="btn primary compact-btn" data-action="copy-invite-link">${COPY.buttons.copyInvite}</button>
+            <button class="btn ghost compact-btn" data-action="share-invite-link">${COPY.buttons.shareInvite}</button>
             <button class="btn ghost compact-btn" data-action="copy-code">${COPY.buttons.copyCode}</button>
+            ${currentRoom.settings.spectatorMode !== false ? `<button class="btn ghost compact-btn" data-action="copy-watch-link">${COPY.buttons.copyWatch}</button>` : ""}
           </div>
         </div>
+      </section>
+
+      <section class="lobby-qr-grid">
+        ${qrImageHtml(link, "QR игрока")}
+        ${currentRoom.settings.spectatorMode !== false ? qrImageHtml(spectatorLink, "QR зрителя") : ""}
       </section>
 
       <div class="waiting-grid">
@@ -1359,6 +1672,14 @@ function renderWaiting() {
 
 function roomControlsHtml() {
   if (!currentRoom) return "";
+  if (viewerMode) {
+    return `
+      <div class="room-controls spectator-controls">
+        <div class="room-controls-left"><span class="meta room-controls-note">Вы смотрите игру как зритель.</span></div>
+        <div class="room-controls-right"><button class="btn ghost danger-lite" data-action="leave-room">${COPY.buttons.leaveRoom}</button></div>
+      </div>
+    `;
+  }
   const onlineCount = currentRoom.players.filter((player) => player.connected).length;
   const showLeaveButton = !(currentRoom.state === "waiting" && onlineCount <= 1);
 
@@ -1478,8 +1799,66 @@ function submittedBlockHtml({ type, text, audio }) {
       </div>
       <div class="submitted-draft-content">
         <div class="submitted-draft-text">${escapeHtml(text || (audio ? emptyLabel : "Пока пусто"))}</div>
-        ${audioPlayerHtml(audio)}
+        ${audioPlayerHtml(audio, { compact: true })}
       </div>
+    </div>
+  `;
+}
+
+
+function spectatorStateText() {
+  const state = currentRoom?.state;
+  const map = {
+    waiting: "Лобби собирается. Можно показать QR друзьям или ждать старта.",
+    starting: "Игра скоро начнётся. Зритель смотрит, но не занимает место игрока.",
+    prompting: "Игроки придумывают начала фраз.",
+    answering: "Игроки добивают фразы.",
+    revealing: "Шутки раскрываются.",
+    voting: "Игроки голосуют за смешные варианты.",
+    scoreboard: "Идут итоги раунда.",
+    grandVoting: "Игроки выбирают шутку вечера.",
+    finished: "Финал готов."
+  };
+  return map[state] || "Игра идёт.";
+}
+
+function renderSpectator() {
+  const onlineCount = currentRoom.players.filter((player) => player.connected).length;
+  app.classList.add("game-stage-card", "compact-game-stage-card", "spectator-stage-card");
+  const latest = currentRoom.bestJokesHistory?.at?.(-1);
+  app.innerHTML = `
+    <div class="game-stage spectator-stage">
+      ${stageTitle("Режим зрителя", `лобби ${currentRoom.code}`)}
+      <section class="stage-panel spectator-panel">
+        <div class="section-row">
+          <h3 class="section-title">${escapeHtml(spectatorStateText())}</h3>
+          <span class="lobby-count">${onlineCount}/${currentRoom.settings.maxPlayers}</span>
+        </div>
+        <p class="meta">Зрители видят игру и могут реагировать, но не влияют на очки.</p>
+        <div class="spectator-reactions">
+          ${["😂", "🔥", "💀", "👏", "🤯", "👀"].map((emoji) => `<button class="reaction-btn" data-action="spectator-reaction" data-emoji="${emoji}">${emoji}</button>`).join("")}
+        </div>
+      </section>
+      ${currentRoom.state === "waiting" ? `
+        <section class="lobby-qr-grid spectator-qr-grid">
+          ${qrImageHtml(inviteLink(currentRoom.code), "QR игрока")}
+        </section>
+      ` : ""}
+      ${["revealing", "voting", "scoreboard"].includes(currentRoom.state) ? jokesHtml({ revealAuthor: currentRoom.state !== "voting" }) : ""}
+      ${currentRoom.state === "scoreboard" ? historyHtml() : ""}
+      ${latest && !["revealing", "voting", "scoreboard"].includes(currentRoom.state) ? `
+        <section class="stage-section">
+          <h3 class="section-title centered-title">Последняя лучшая шутка</h3>
+          <div class="jokes stage-jokes">${jokeCardHtml({
+            meta: `Раунд ${latest.round} · ${latest.authorName} · голосов: ${latest.votesCount}`,
+            promptText: latest.promptText,
+            answerText: latest.answerText,
+            promptAudio: latest.promptAudio || null,
+            answerAudio: latest.answerAudio || null,
+            compact: true
+          })}</div>
+        </section>
+      ` : ""}
     </div>
   `;
 }
@@ -1651,7 +2030,7 @@ function historyHtml() {
             promptAudio: latest.promptAudio || null,
             answerAudio: latest.answerAudio || null,
             compact: true,
-            actions: `<button class="btn ghost compact-btn" data-action="copy-history" data-history-index="${latestIndex}">${COPY.buttons.copy}</button>`
+            actions: `<button class="btn ghost compact-btn" data-action="copy-history" data-history-index="${latestIndex}">${COPY.buttons.copy}</button><button class="btn ghost compact-btn" data-action="share-history" data-history-index="${latestIndex}">${COPY.buttons.shareCard}</button>`
           })}
         </div>
 
@@ -1664,7 +2043,7 @@ function historyHtml() {
               promptAudio: joke.promptAudio || null,
               answerAudio: joke.answerAudio || null,
               compact: true,
-              actions: `<button class="btn ghost compact-btn" data-action="copy-history" data-history-index="${index}">${COPY.buttons.copy}</button>`
+              actions: `<button class="btn ghost compact-btn" data-action="copy-history" data-history-index="${index}">${COPY.buttons.copy}</button><button class="btn ghost compact-btn" data-action="share-history" data-history-index="${index}">${COPY.buttons.shareCard}</button>`
             })).join("")}
           </div>
         ` : ""}
@@ -1761,7 +2140,9 @@ function grandFinalCandidatesHtml({ finished = false } = {}) {
           promptAudio: joke.promptAudio || null,
           answerAudio: joke.answerAudio || null,
           winner: isWinner,
-          actions: finished ? "" : `<button class="btn primary" data-action="grand-vote" data-joke-id="${escapeHtml(joke.jokeId)}" ${disabled ? "disabled" : ""}>${disabled && !hasGrandVoted() ? "Вы участник этой шутки" : COPY.buttons.grandVote}</button>`
+          actions: finished
+            ? `<button class="btn ghost compact-btn" data-action="share-grand-joke" data-joke-id="${escapeHtml(joke.jokeId)}">${COPY.buttons.shareCard}</button>`
+            : `<button class="btn primary" data-action="grand-vote" data-joke-id="${escapeHtml(joke.jokeId)}" ${disabled ? "disabled" : ""}>${disabled && !hasGrandVoted() ? "Вы участник этой шутки" : COPY.buttons.grandVote}</button>`
         });
       }).join("")}
     </div>
@@ -1843,7 +2224,8 @@ function renderFinalSummary() {
             answerText: joke.answerText,
             promptAudio: joke.promptAudio || null,
             answerAudio: joke.answerAudio || null,
-            winner: true
+            winner: true,
+            actions: `<button class="btn ghost compact-btn" data-action="share-grand-joke" data-joke-id="${escapeHtml(joke.jokeId)}">${COPY.buttons.shareCard}</button>`
           })).join("")}
         </div>
       </section>
@@ -1954,6 +2336,12 @@ function render() {
     else if (currentScreen === "join") renderJoinMenu();
     else if (currentScreen === "lobbies") renderLobbyBrowser();
     else if (currentScreen === "code") renderCodeJoin();
+    else if (currentScreen === "watch") {
+      renderWatchJoin();
+      setTimeout(() => {
+        if (viewerMode && !currentRoom) requestSpectatorJoin();
+      }, 0);
+    }
     else if (currentScreen === "invite") {
       renderInviteJoin();
       setTimeout(requestInviteJoin, 0);
@@ -1971,6 +2359,15 @@ function render() {
   }
 
   const state = currentRoom.state;
+  if (viewerMode && state !== "finished") {
+    renderSpectator();
+    renderRoomControlsRoot();
+    startTimerView();
+    restartScreenAnimation();
+    initializeVoiceMessages();
+    updateRecordingTimer();
+    return;
+  }
   if (state === "waiting") renderWaiting();
   if (state === "starting") renderStarting();
   if (state === "prompting") renderPrompting();
@@ -2010,6 +2407,9 @@ function readSettings() {
     anonymousMode: document.getElementById("anonymousMode")?.checked ?? DEFAULT_ROOM_SETTINGS.anonymousMode,
     soundsEnabled: document.getElementById("soundsEnabled")?.checked ?? DEFAULT_ROOM_SETTINGS.soundsEnabled,
     promptMode: document.getElementById("promptMode")?.value ?? DEFAULT_ROOM_SETTINGS.promptMode,
+    promptPack: document.getElementById("promptPack")?.value ?? DEFAULT_ROOM_SETTINGS.promptPack,
+    spectatorMode: document.getElementById("spectatorMode")?.checked ?? DEFAULT_ROOM_SETTINGS.spectatorMode,
+    spectatorVoting: document.getElementById("spectatorVoting")?.value ?? DEFAULT_ROOM_SETTINGS.spectatorVoting,
     assignmentMode: document.getElementById("assignmentMode")?.value ?? DEFAULT_ROOM_SETTINGS.assignmentMode,
     maxPlayers: document.getElementById("maxPlayers")?.value ?? DEFAULT_ROOM_SETTINGS.maxPlayers,
     publicLobby: document.getElementById("publicLobby")?.checked ?? DEFAULT_ROOM_SETTINGS.publicLobby
@@ -2091,6 +2491,10 @@ document.addEventListener("click", (event) => {
   const actionsWithOwnSound = [
     "copy-code",
     "copy-invite-link",
+    "copy-watch-link",
+    "share-invite-link",
+    "share-history",
+    "share-grand-joke",
     "copy-joke",
     "copy-best",
     "copy-history",
@@ -2184,6 +2588,10 @@ document.addEventListener("click", (event) => {
     render();
   }
 
+  if (action === "spectator-reaction") {
+    socket.emit("spectatorReaction", { emoji: button.dataset.emoji });
+  }
+
   if (action === "toggle-history") {
     historyOpen = !historyOpen;
     render();
@@ -2254,8 +2662,21 @@ document.addEventListener("click", (event) => {
   }
 
   if (action === "join-invite") {
+    viewerMode = false;
     inviteJoinRequestedFor = null;
     requestInviteJoin();
+  }
+
+  if (action === "join-spectator-route") {
+    const code = routeRoomCode;
+    if (!code) return;
+    viewerMode = true;
+    setRoute(`/watch/${code}`);
+    requestSpectatorJoin();
+  }
+
+  if (action === "join-spectator") {
+    requestSpectatorJoin();
   }
 
   if (action === "confirm-name") {
@@ -2286,6 +2707,8 @@ document.addEventListener("click", (event) => {
 
   if (action === "copy-code") copyWithButtonFeedback(currentRoom.code, button);
   if (action === "copy-invite-link") copyWithButtonFeedback(inviteLink(currentRoom.code), button);
+  if (action === "copy-watch-link") copyWithButtonFeedback(watchLink(currentRoom.code), button);
+  if (action === "share-invite-link") shareInviteLink(currentRoom.code);
   if (action === "start-game") socket.emit("startGame");
 
   if (action === "submit-prompt") {
@@ -2377,14 +2800,23 @@ socket.on("connect", () => {
 
 socket.on("roomCreated", ({ code, sessionId: nextSessionId }) => {
   lobbySettingsOpen = false;
+  viewerMode = false;
   rememberSession(code, nextSessionId);
   playSound("join");
   setRoute(`/lobby/${code}`);
   showToast(COPY.messages.roomCreated(code));
 });
 
+socket.on("joinedSpectator", ({ code, sessionId: nextSessionId }) => {
+  viewerMode = true;
+  rememberSession(code, nextSessionId);
+  setRoute(`/watch/${code}`, { replace: true });
+  showToast(COPY.messages.spectatorJoined);
+});
+
 socket.on("joinedRoom", ({ code, sessionId: nextSessionId, reconnected }) => {
   lobbySettingsOpen = false;
+  viewerMode = false;
   rememberSession(code, nextSessionId);
   playSound("join");
   setRoute(`/lobby/${code}`, { replace: currentScreen === "invite" });
@@ -2392,6 +2824,7 @@ socket.on("joinedRoom", ({ code, sessionId: nextSessionId, reconnected }) => {
 });
 
 socket.on("rejoinedRoom", ({ code, sessionId: nextSessionId }) => {
+  viewerMode = false;
   rememberSession(code, nextSessionId);
   playSound("join");
   showToast(COPY.messages.returned(code));
@@ -2407,7 +2840,8 @@ socket.on("roomUpdate", (room) => {
     serverTimeOffset = room.serverNow - Date.now();
   }
   currentRoom = room;
-  setRoute(pathForRoom(room), { replace: true });
+  if (viewerMode) setRoute(`/watch/${room.code}`, { replace: true });
+  else setRoute(pathForRoom(room), { replace: true });
 
   if (oldState && oldState !== room.state) {
     clearDraftForState(room.state, room);

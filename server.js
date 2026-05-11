@@ -123,6 +123,282 @@ const COPY = {
   ]
 };
 
+
+const PROMPT_PACKS = {
+  universal: [
+    "Я понял, что вечер пошёл не туда, когда...",
+    "Самое опасное слово в компании — это...",
+    "Если бы наш чат был городом, то...",
+    "Никто не ожидал, что именно он...",
+    "Всё было нормально, пока кто-то не сказал...",
+    "Если бы лень была профессией, то...",
+    "Самая странная причина опоздания — это...",
+    "В тот момент все поняли, что план провалился, потому что...",
+    "Самая честная фраза вечера звучала так...",
+    "Если бы этот день был мемом, подпись была бы..."
+  ],
+  friends: [
+    "В нашей компании всегда есть человек, который...",
+    "Если бы у нас был общий дневник, первая запись была бы...",
+    "Самый подозрительный друг — это тот, кто...",
+    "Мы договорились вести себя нормально, но...",
+    "Когда все говорят “один раунд и всё”, на самом деле...",
+    "Если бы нашу компанию снимали как сериал, название серии было бы...",
+    "У каждого друга есть суперспособность, и у него это...",
+    "В нашей компании нельзя доверять человеку, который...",
+    "Самая опасная фраза перед прогулкой — это...",
+    "Если бы нас оставили одних на час, мы бы..."
+  ],
+  school: [
+    "Преподаватель понял, что группа не готова, когда...",
+    "Самая честная причина не сделать домашку — это...",
+    "Если бы контрольная могла говорить, она бы сказала...",
+    "На паре всегда есть человек, который...",
+    "Когда учитель говорит “это будет легко”, значит...",
+    "Самый опасный момент на уроке — это...",
+    "Экзамен начался нормально, пока...",
+    "Группа замолчала, когда преподаватель спросил...",
+    "Если бы шпаргалка была искусством, то...",
+    "В журнале не хватало только записи..."
+  ],
+  work: [
+    "Созвон пошёл не туда, когда...",
+    "Самая страшная фраза в рабочем чате — это...",
+    "Если бы дедлайн был человеком, он бы...",
+    "На совещании всегда есть человек, который...",
+    "Когда начальник говорит “быстро обсудим”, это значит...",
+    "Самое подозрительное письмо начинается со слов...",
+    "Офис понял, что день будет тяжёлым, когда...",
+    "Если бы Excel мог плакать, он бы заплакал из-за...",
+    "Рабочий день закончился бы раньше, если бы...",
+    "Корпоративная легенда гласит, что однажды сотрудник..."
+  ],
+  gaming: [
+    "Катка была выиграна, пока кто-то не...",
+    "Самый опасный тиммейт — это тот, кто...",
+    "В Discord стало тихо, когда...",
+    "Если бы наш голосовой чат записывали, нас бы...",
+    "Он сказал “я сейчас зайду”, и через...",
+    "Самый страшный звук в игре — это...",
+    "Когда друг говорит “я умею играть”, значит...",
+    "Команда поняла, что всё плохо, когда...",
+    "Если бы лаги были оправданием, то...",
+    "Перед поражением всегда кто-то говорит..."
+  ],
+  party: [
+    "Вечеринка началась спокойно, пока...",
+    "Самый опасный человек на тусовке — это тот, кто...",
+    "Когда кто-то сказал “давайте поиграем”, все...",
+    "На кухне всегда происходит...",
+    "Если бы диван мог говорить, он бы рассказал...",
+    "Самый неожиданный гость принёс с собой...",
+    "Вечер стал легендарным после фразы...",
+    "Когда музыка выключилась, все услышали...",
+    "План был простой: посидеть спокойно, но...",
+    "Никто не понял правила, но все..."
+  ],
+  family: [
+    "Семейный ужин пошёл не туда, когда...",
+    "Самая опасная фраза родственников — это...",
+    "Когда бабушка сказала “я немного приготовила”, оказалось...",
+    "Если бы семейный чат был фильмом, он назывался бы...",
+    "Все молчали, пока один родственник не спросил...",
+    "На семейных встречах всегда есть человек, который...",
+    "Никто не спорил, пока тема не дошла до...",
+    "Если бы дедушка вёл блог, первый пост был бы...",
+    "Семья поняла, что праздник удался, когда...",
+    "Самая странная семейная традиция — это..."
+  ],
+  absurd: [
+    "Если бы холодильник стал президентом, первым указом было бы...",
+    "Лифт остановился и сказал...",
+    "Кошка посмотрела на меня так, будто...",
+    "Если бы носки исчезали не просто так, то...",
+    "Пельмени собрались на совещание, чтобы...",
+    "В параллельной вселенной будильник...",
+    "Когда чайник закипел, он прошептал...",
+    "Самый умный предмет в комнате — это...",
+    "Если бы стены реально слышали, они бы...",
+    "Однажды Wi‑Fi решил отомстить и..."
+  ],
+  kz: [
+    "Всё было нормально, пока кто-то не сказал “щас быстро”...",
+    "Когда такси уже рядом, всегда происходит...",
+    "Самая казахстанская причина опоздать — это...",
+    "Если бы очередь в ЦОНе была сериалом, она бы называлась...",
+    "Когда родственники спрашивают “когда уже”, хочется...",
+    "На дастархане нельзя отказываться от...",
+    "Если бы пробки могли говорить, они бы сказали...",
+    "Все поняли, что поездка будет долгой, когда...",
+    "Когда сказали “рядом”, оказалось...",
+    "Самая опасная фраза в гостях — это “ещё чуть-чуть”..."
+  ],
+  softRoast: [
+    "Этот человек настолько уверен в себе, что...",
+    "Если бы он был приложением, его бы удалили за...",
+    "Его суперспособность — это...",
+    "Он зашёл в комнату и сразу...",
+    "Если бы оправдания были валютой, он бы...",
+    "Когда он говорит “я всё понял”, значит...",
+    "Его главный талант — это...",
+    "Если бы он был погодой, то...",
+    "Он так долго думал, что...",
+    "Даже таймер устал ждать, пока он..."
+  ]
+};
+
+const PLAYER_PROMPT_PACKS = {
+  universal: [
+    "Когда {{player}} сказал {{player2}}, что всё под контролем...",
+    "Если бы {{player}} и {{player2}} открыли бизнес, он назывался бы...",
+    "{{player}} понял, что вечер пошёл не туда, когда {{player2}}...",
+    "Самая опасная фраза от {{player}} звучит так...",
+    "Если бы {{player}} был главным героем вечера, первая сцена была бы...",
+    "{{player}} и {{player2}} договорились вести себя нормально, но...",
+    "В комнате стало тихо, когда {{player}} посмотрел на {{player2}} и сказал...",
+    "Если бы {{player}} отвечал за план, {{player2}} уже бы...",
+    "{{player}} случайно доказал, что дружба — это...",
+    "Когда {{host}} сказал, что всё честно, {{player}} сразу..."
+  ],
+  friends: [
+    "В нашей компании {{player}} всегда тот человек, который...",
+    "{{player}} и {{player2}} вместе опасны, потому что...",
+    "Если {{player}} говорит “я быстро”, {{player2}} уже понимает, что...",
+    "Главная суперспособность {{player}} — это...",
+    "{{player2}} больше всего боится, когда {{player}} начинает фразу со слов...",
+    "Если бы {{player}} был админом нашего чата, первое правило было бы...",
+    "{{player}} однажды зашёл слишком далеко и...",
+    "Когда {{player}} зовёт гулять, {{player2}} проверяет...",
+    "В нашей компании нельзя оставлять {{player}} и {{player2}} одних, потому что...",
+    "{{player}} хотел сказать что-то умное, но {{player2}}..."
+  ],
+  school: [
+    "Преподаватель понял, что {{player}} не готов, когда...",
+    "{{player}} списывал так уверенно, что {{player2}}...",
+    "Если бы {{player}} был старостой, группа бы...",
+    "На паре {{player}} молчал до момента, пока {{player2}}...",
+    "{{player}} объяснил домашку так, что...",
+    "Когда спросили {{player}}, вся группа...",
+    "{{player2}} понял, что контрольная будет сложной, когда {{player}}...",
+    "Если бы экзамен принимал {{player}}, первым вопросом было бы..."
+  ],
+  work: [
+    "На созвоне {{player}} сказал “коротко”, и {{player2}} сразу...",
+    "Если бы {{player}} был дедлайном, он бы...",
+    "Рабочий чат замер, когда {{player}} отправил...",
+    "{{player}} предложил оптимизировать процесс, и через минуту {{player2}}...",
+    "Когда {{host}} сказал “быстро обсудим”, {{player}} уже...",
+    "Если бы {{player}} вел протокол встречи, там было бы написано...",
+    "{{player}} открыл Excel, и офис понял, что...",
+    "Самое подозрительное письмо от {{player}} начинается со слов..."
+  ],
+  gaming: [
+    "Катка закончилась, когда {{player}} сказал {{player2}}, что он умеет играть...",
+    "В Discord стало тихо, когда {{player}} включил микрофон и...",
+    "{{player}} пикнул героя, и {{player2}} сразу...",
+    "Команда поверила {{player}} ровно до момента, когда...",
+    "Если {{player}} говорит “я сейчас зайду”, значит...",
+    "{{player2}} понял, что катка проиграна, когда {{player}}...",
+    "Самый опасный тиммейт — это {{player}}, потому что...",
+    "Когда {{player}} сказал “изи”, игра..."
+  ],
+  party: [
+    "Вечеринка стала легендарной, когда {{player}} и {{player2}}...",
+    "На кухне {{player}} сказал фразу, после которой...",
+    "{{player}} пришёл просто посидеть, но через час...",
+    "Когда музыка выключилась, все услышали, как {{player}}...",
+    "{{player2}} понял, что вечер удался, когда {{player}}...",
+    "План был спокойный, пока {{player}} не предложил...",
+    "Если бы диван мог говорить, он бы рассказал про {{player}}...",
+    "{{player}} сказал “я ненадолго”, и это закончилось тем, что..."
+  ],
+  family: [
+    "Семейный ужин пошёл не туда, когда {{player}} спросил...",
+    "Родственники замолчали, когда {{player}} сказал...",
+    "Если бы семейный чат вёл {{player}}, там бы каждый день было...",
+    "{{player2}} понял, что спор начался, когда {{player}}...",
+    "На дастархане {{player}} отказался от добавки, и...",
+    "Когда {{player}} сказал “я объясню”, семья...",
+    "Самая опасная семейная фраза от {{player}} — это..."
+  ],
+  absurd: [
+    "Если бы {{player}} был холодильником, {{player2}} первым делом...",
+    "Кошка посмотрела на {{player}} так, будто...",
+    "В параллельной вселенной {{player}} и {{player2}} работают...",
+    "Когда чайник увидел {{player}}, он прошептал...",
+    "Если бы носки исчезали из-за {{player}}, причина была бы...",
+    "{{player}} случайно стал президентом лифта и первым указом...",
+    "Самый умный предмет в комнате посмотрел на {{player}} и..."
+  ],
+  kz: [
+    "{{player}} сказал “щас быстро”, и {{player2}} понял, что...",
+    "Когда такси уже рядом, {{player}} обязательно...",
+    "{{player}} объяснил слово “рядом” так, что {{player2}}...",
+    "На дастархане {{player}} сделал ошибку: он...",
+    "Если бы очередь в ЦОНе вёл {{player}}, она бы...",
+    "{{player2}} понял, что поездка будет долгой, когда {{player}}...",
+    "Самая казахстанская причина опоздания у {{player}} — это..."
+  ],
+  softRoast: [
+    "{{player}} настолько уверен в себе, что {{player2}} уже...",
+    "Если бы {{player}} был приложением, {{player2}} удалил бы его за...",
+    "Главный талант {{player}} — это...",
+    "Когда {{player}} говорит “я всё понял”, {{player2}}...",
+    "{{player}} так долго думал, что {{player2}} успел...",
+    "Если бы оправдания были валютой, {{player}} бы...",
+    "{{player}} зашёл в комнату и сразу...",
+    "Даже таймер устал ждать, пока {{player}}..."
+  ]
+};
+
+function getPromptPackList(packName = "mixed") {
+  if (packName && packName !== "mixed" && PROMPT_PACKS[packName]) return PROMPT_PACKS[packName];
+  return Object.values(PROMPT_PACKS).flat();
+}
+
+function getPlayerPromptPackList(packName = "mixed") {
+  if (packName && packName !== "mixed" && PLAYER_PROMPT_PACKS[packName]) return PLAYER_PROMPT_PACKS[packName];
+  return Object.values(PLAYER_PROMPT_PACKS).flat();
+}
+
+function pickBySeed(items, seed = 0) {
+  if (!items.length) return null;
+  const safeSeed = Math.abs(Math.floor(Number(seed) || 0));
+  return items[safeSeed % items.length];
+}
+
+function promptName(player, fallback = "кто-то из лобби") {
+  if (!player) return fallback;
+  return cleanText(player.name, 28) || fallback;
+}
+
+function renderPlayerPromptTemplate(template, room, seed = 0, options = {}) {
+  const players = room?.players ? getConnectedPlayers(room) : [];
+  if (!players.length) return String(template || "");
+
+  const focusPlayer = options.playerId ? getPlayer(room, options.playerId) : null;
+  const first = focusPlayer || pickBySeed(players, seed) || players[0];
+  const withoutFirst = players.filter((player) => player.id !== first.id);
+  const second = pickBySeed(withoutFirst, seed + 7) || first;
+  const withoutFirstSecond = players.filter((player) => player.id !== first.id && player.id !== second.id);
+  const third = pickBySeed(withoutFirstSecond, seed + 13) || second || first;
+  const host = getPlayer(room, room?.hostId) || players[0];
+
+  const values = {
+    player: promptName(first),
+    random: promptName(first),
+    me: promptName(focusPlayer || first),
+    player2: promptName(second),
+    another: promptName(second),
+    player3: promptName(third),
+    host: promptName(host, "хост")
+  };
+
+  return String(template || "").replace(/\{\{\s*(player|player2|player3|random|another|me|host)\s*\}\}/gi, (_, key) => {
+    return values[String(key).toLowerCase()] || "кто-то из лобби";
+  });
+}
+
 const rooms = {};
 const PROMPT_MAX_LENGTH = 160;
 const ANSWER_MAX_LENGTH = 180;
@@ -418,8 +694,20 @@ function generateRoomCode() {
   return code;
 }
 
-function pickAutoPrompt(index = 0) {
-  return COPY.autoPrompts[index % COPY.autoPrompts.length];
+function pickAutoPrompt(index = 0, room = null, options = {}) {
+  const packName = room?.settings?.promptPack || "mixed";
+  const staticPack = getPromptPackList(packName);
+  const playerPack = room ? getPlayerPromptPackList(packName) : [];
+  const connectedPlayers = room ? getConnectedPlayers(room) : [];
+
+  // Если в лобби есть игроки, даём динамическим шаблонам больший вес:
+  // так банк начал чаще использует реальные ники, но обычные заготовки тоже остаются.
+  const merged = connectedPlayers.length > 0
+    ? [...playerPack, ...playerPack, ...staticPack, ...COPY.autoPrompts]
+    : [...staticPack, ...COPY.autoPrompts];
+
+  const template = merged[Math.abs(Math.floor(Number(index) || 0)) % merged.length];
+  return cleanText(renderPlayerPromptTemplate(template, room, index, options), PROMPT_MAX_LENGTH);
 }
 
 function randomItem(items) {
@@ -428,6 +716,10 @@ function randomItem(items) {
 
 function getConnectedPlayers(room) {
   return room.players.filter((player) => player.connected);
+}
+
+function getConnectedSpectators(room) {
+  return safeArray(room.spectators).filter((spectator) => spectator.connected);
 }
 
 function normalizeSettings(raw = {}) {
@@ -441,7 +733,10 @@ function normalizeSettings(raw = {}) {
     settings: {
       anonymousMode: Boolean(raw.anonymousMode),
       soundsEnabled: raw.soundsEnabled !== false,
-      promptMode: raw.promptMode === "auto" ? "auto" : "manual",
+      promptMode: raw.promptMode === "auto" || raw.promptMode === "mixed" ? raw.promptMode : "manual",
+      promptPack: PROMPT_PACKS[raw.promptPack] || raw.promptPack === "mixed" ? raw.promptPack : "mixed",
+      spectatorMode: raw.spectatorMode === false ? false : true,
+      spectatorVoting: ["off", "reactions", "grandFinalOnly"].includes(raw.spectatorVoting) ? raw.spectatorVoting : "off",
       assignmentMode: raw.assignmentMode === "same" ? "same" : "different",
       maxPlayers: clampNumber(raw.maxPlayers, 2, 12, 6),
       publicLobby: raw.publicLobby !== false
@@ -503,7 +798,8 @@ function publicRoom(room) {
   return {
     ...safeRoom,
     serverNow: Date.now(),
-    players: room.players.map(({ socketId, disconnectTimer, ...player }) => player)
+    players: room.players.map(({ socketId, disconnectTimer, ...player }) => player),
+    spectators: safeArray(room.spectators).map(({ socketId, ...spectator }) => spectator)
   };
 }
 
@@ -518,6 +814,7 @@ function getOpenRooms() {
       code: room.code,
       hostName: getPlayerName(room, room.hostId),
       playersCount: getConnectedPlayers(room).length,
+      spectatorsCount: getConnectedSpectators(room).length,
       maxPlayers: room.settings.maxPlayers,
       maxRounds: room.maxRounds,
       promptMode: room.settings.promptMode,
@@ -627,6 +924,16 @@ function maybeAdvanceAfterPlayerLeave(room) {
 function leaveRoom(socket, notifySelf = true) {
   const room = rooms[socket.data.roomCode];
   const playerId = socket.data.playerId;
+  const spectatorId = socket.data.spectatorId;
+  if (room && spectatorId && !playerId) {
+    room.spectators = safeArray(room.spectators).filter((item) => item.id !== spectatorId);
+    socket.leave(room.code);
+    socket.data.roomCode = null;
+    socket.data.spectatorId = null;
+    if (notifySelf) socket.emit("leftRoom");
+    emitRoom(room);
+    return;
+  }
   if (!room || !playerId) return;
 
   const player = room.players.find((item) => item.id === playerId);
@@ -728,7 +1035,7 @@ function buildAssignments(room) {
         id: makeId("prompt"),
         round: room.round,
         authorId: null,
-        text: pickAutoPrompt(room.round + Date.now()),
+        text: pickAutoPrompt(room.round + Date.now(), room),
         audio: null,
         versions: []
       };
@@ -748,7 +1055,7 @@ function buildAssignments(room) {
         id: makeId("prompt"),
         round: room.round,
         authorId: null,
-        text: pickAutoPrompt(room.round + index),
+        text: pickAutoPrompt(room.round + index, room, { playerId: player.id }),
         audio: null,
         versions: []
       };
@@ -770,7 +1077,7 @@ function fillMissingPrompts(room) {
   const submitted = new Set(room.prompts.map((prompt) => prompt.authorId));
   getConnectedPlayers(room).forEach((player, index) => {
     if (!submitted.has(player.id)) {
-      const fallbackText = pickAutoPrompt(room.round + index);
+      const fallbackText = pickAutoPrompt(room.round + index, room, { playerId: player.id });
       incrementPlayerStat(room, player.id, "missedPrompts");
       logEvent(room, "miss_prompt", player.id, { fallbackText });
       room.prompts.push({
@@ -1412,6 +1719,8 @@ io.on("connection", (socket) => {
       timers: normalized.timers,
       settings: normalized.settings,
       players: [createPlayer(socket, cleanName, cleanSession)],
+      spectators: [],
+      promptCursor: 0,
       prompts: [],
       sharedPrompt: null,
       assignments: {},
@@ -1436,6 +1745,34 @@ io.on("connection", (socket) => {
     socket.emit("roomCreated", { code, sessionId: cleanSession });
     emitRoom(room);
     emitOpenRooms();
+  });
+
+  socket.on("joinSpectator", ({ code, name, sessionId } = {}) => {
+    const cleanCode = cleanText(code, 8).toUpperCase();
+    const cleanName = cleanText(name, 32) || "зритель";
+    const cleanSession = cleanSessionId(sessionId) || makeId("spectator");
+    const room = rooms[cleanCode];
+
+    if (!room) return emitError(socket, COPY.errors.roomMissing);
+    if (room.settings.spectatorMode === false) return emitError(socket, "Режим зрителя выключен в этом лобби.");
+
+    if (!Array.isArray(room.spectators)) room.spectators = [];
+    let spectator = room.spectators.find((item) => item.id === cleanSession);
+    if (!spectator) {
+      spectator = { id: cleanSession, socketId: socket.id, name: cleanName, connected: true, joinedAt: Date.now(), reactions: [] };
+      room.spectators.push(spectator);
+    } else {
+      spectator.name = cleanName;
+      spectator.socketId = socket.id;
+      spectator.connected = true;
+    }
+
+    socket.data.roomCode = room.code;
+    socket.data.spectatorId = spectator.id;
+    socket.data.playerId = null;
+    socket.join(room.code);
+    socket.emit("joinedSpectator", { code: cleanCode, sessionId: cleanSession });
+    emitRoom(room);
   });
 
   socket.on("joinRoom", ({ code, name, sessionId } = {}) => {
@@ -1719,6 +2056,20 @@ io.on("connection", (socket) => {
     }
   });
 
+  socket.on("spectatorReaction", ({ emoji } = {}) => {
+    const room = rooms[socket.data.roomCode];
+    const spectatorId = socket.data.spectatorId;
+    if (!room || !spectatorId) return;
+    const allowed = ["😂", "🔥", "💀", "👏", "🤯", "👀"];
+    const cleanEmoji = allowed.includes(emoji) ? emoji : "😂";
+    const spectator = safeArray(room.spectators).find((item) => item.id === spectatorId);
+    if (!spectator) return;
+    const reaction = { id: makeId("reaction"), spectatorId, name: spectator.name, emoji: cleanEmoji, createdAt: Date.now(), state: room.state, round: room.round };
+    spectator.reactions.push(reaction);
+    if (spectator.reactions.length > 30) spectator.reactions.shift();
+    io.to(room.code).emit("roomNotice", { message: `${spectator.name}: ${cleanEmoji}`, type: "reaction", createdAt: Date.now() });
+  });
+
   socket.on("restartGame", () => {
     const room = rooms[socket.data.roomCode];
     if (!ensureHost(socket, room)) return;
@@ -1761,7 +2112,18 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => {
     const room = rooms[socket.data.roomCode];
     const playerId = socket.data.playerId;
+    const spectatorId = socket.data.spectatorId;
     if (!room) return;
+
+    if (spectatorId && !playerId) {
+      const spectator = safeArray(room.spectators).find((item) => item.id === spectatorId);
+      if (spectator && spectator.socketId === socket.id) {
+        spectator.connected = false;
+        spectator.socketId = null;
+        emitRoom(room);
+      }
+      return;
+    }
 
     const player = room.players.find((item) => item.id === playerId);
     if (!player) return;
