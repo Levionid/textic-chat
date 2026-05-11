@@ -51,7 +51,6 @@ const GAME_MODES = {
     title: "Классика связок",
     shortTitle: "Классика",
     description: "Игроки пишут начала, затем каждый добивает чужую фразу.",
-    status: "Готово",
     minPlayers: 2,
     tags: ["связки", "база", "2+ игрока"],
     enabled: true
@@ -61,7 +60,6 @@ const GAME_MODES = {
     title: "Одна фраза на всех",
     shortTitle: "Одна фраза",
     description: "Каждый пишет начало, потом каждое начало становится раундом для всех.",
-    status: "Готово",
     minPlayers: 2,
     tags: ["баттл", "одинаковая фраза", "2+ игрока"],
     enabled: true
@@ -71,7 +69,6 @@ const GAME_MODES = {
     title: "Дуэльный турнир",
     shortTitle: "Дуэль",
     description: "Дуэли и трио-бои по сетке. Начала для боя пишут игроки вне текущей дуэли.",
-    status: "Готово",
     minPlayers: 3,
     tags: ["турнир", "сетка", "3+ игрока"],
     enabled: true
@@ -81,7 +78,6 @@ const GAME_MODES = {
     title: "Угадай автора",
     shortTitle: "Угадай автора",
     description: "Сначала угадываем автора начала/концовки, потом голосуем за шутку.",
-    status: "Готово",
     minPlayers: 3,
     tags: ["угадайка", "анонимно", "3+ игрока"],
     enabled: true
@@ -91,7 +87,6 @@ const GAME_MODES = {
     title: "Цепочка хаоса",
     shortTitle: "Цепочка",
     description: "Каждый видит только предыдущий кусок истории и продолжает вслепую.",
-    status: "Готово",
     minPlayers: 3,
     tags: ["история", "хаос", "3+ игрока"],
     enabled: true
@@ -101,7 +96,6 @@ const GAME_MODES = {
     title: "Шутка с продолжением",
     shortTitle: "История",
     description: "История собирается по частям, каждый видит весь предыдущий контекст.",
-    status: "Готово",
     minPlayers: 3,
     tags: ["история", "контекст", "3+ игрока"],
     enabled: true
@@ -114,6 +108,57 @@ function gameModeInfo(modeId) {
 
 function gameModeTitle(modeId) {
   return gameModeInfo(modeId).title;
+}
+
+
+function gameModeIconSvg(modeId) {
+  const icons = {
+    classic_pairs: `
+      <svg viewBox="0 0 96 96" aria-hidden="true" focusable="false">
+        <path class="mode-icon-shadow" d="M22 24h38c10 0 18 7 18 17s-8 17-18 17H43L29 70v-12h-7c-10 0-18-7-18-17s8-17 18-17Z"/>
+        <path class="mode-icon-main" d="M24 19h39c11 0 20 8 20 19s-9 19-20 19H46L31 70V57h-7C13 57 5 49 5 38s8-19 19-19Z"/>
+        <path class="mode-icon-line" d="M25 34h38M25 44h25"/>
+        <path class="mode-icon-accent" d="M67 54l9 9 11-18"/>
+      </svg>`,
+    shared_prompt: `
+      <svg viewBox="0 0 96 96" aria-hidden="true" focusable="false">
+        <circle class="mode-icon-shadow" cx="48" cy="48" r="28"/>
+        <path class="mode-icon-main" d="M48 15c16 0 29 11 29 25 0 16-14 28-32 28h-4L24 80l5-17c-7-5-10-12-10-20 0-15 13-28 29-28Z"/>
+        <path class="mode-icon-accent" d="M48 28v28M34 42h28"/>
+        <circle class="mode-icon-dot" cx="23" cy="25" r="6"/>
+        <circle class="mode-icon-dot" cx="75" cy="67" r="6"/>
+      </svg>`,
+    duel_tournament: `
+      <svg viewBox="0 0 96 96" aria-hidden="true" focusable="false">
+        <path class="mode-icon-shadow" d="M25 22l49 49M71 22L22 71"/>
+        <path class="mode-icon-main" d="M20 18l54 54 8-8-54-54-8 8Z"/>
+        <path class="mode-icon-main alt" d="M76 18 22 72l-8-8 54-54 8 8Z"/>
+        <path class="mode-icon-accent" d="M48 10l6 13 14 2-10 10 3 14-13-7-13 7 3-14-10-10 14-2 6-13Z"/>
+      </svg>`,
+    guess_author: `
+      <svg viewBox="0 0 96 96" aria-hidden="true" focusable="false">
+        <circle class="mode-icon-main" cx="40" cy="39" r="24"/>
+        <path class="mode-icon-line" d="M56 57l22 22"/>
+        <path class="mode-icon-accent" d="M32 36c1-8 16-8 17 0 1 9-9 9-9 16"/>
+        <circle class="mode-icon-dot" cx="40" cy="61" r="4"/>
+        <path class="mode-icon-shadow" d="M69 66l10 10"/>
+      </svg>`,
+    chaos_chain: `
+      <svg viewBox="0 0 96 96" aria-hidden="true" focusable="false">
+        <path class="mode-icon-shadow" d="M15 50c8-18 23-18 33 0s25 18 33 0"/>
+        <path class="mode-icon-main" d="M15 34h22l-9 14h20L31 74l6-20H17l-2-20Z"/>
+        <path class="mode-icon-main alt" d="M56 21h24L67 43h16L58 76l8-25H49l7-30Z"/>
+        <path class="mode-icon-accent" d="M21 72c12-8 20-8 31 0s19 8 29 0"/>
+      </svg>`,
+    story_chain: `
+      <svg viewBox="0 0 96 96" aria-hidden="true" focusable="false">
+        <path class="mode-icon-shadow" d="M18 22h42c10 0 18 8 18 18v36H33c-8 0-15-7-15-15V22Z"/>
+        <path class="mode-icon-main" d="M18 18h43c10 0 18 8 18 18v39H35c-9 0-17-8-17-17V18Z"/>
+        <path class="mode-icon-line" d="M32 35h31M32 47h28M32 59h20"/>
+        <path class="mode-icon-accent" d="M70 16v22l8-6 8 6V16"/>
+      </svg>`
+  };
+  return icons[modeId] || icons.classic_pairs;
 }
 
 const SOUND_FILES = {
@@ -1887,21 +1932,36 @@ function renderCreateRoom() {
   const modes = Object.values(GAME_MODES);
   app.innerHTML = `
     <h2 class="panel-title centered-title">Выбери режим игры</h2>
-    <p class="meta centered-meta mode-select-lead">Сначала выбирается режим. После создания лобби режим уже не меняется — можно будет менять только настройки.</p>
-    <div class="mode-grid">
-      ${modes.map((mode) => `
-        <article class="mode-card ${mode.enabled ? "" : "disabled-mode"}">
-          <div class="mode-card-top">
-            <span class="mode-status">${escapeHtml(mode.status)}</span>
-            <span class="mode-min">${mode.minPlayers}+ игрока</span>
-          </div>
-          <h3>${escapeHtml(mode.title)}</h3>
-          <p>${escapeHtml(mode.description)}</p>
-          <div class="mode-tags">${mode.tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}</div>
-          <button class="btn ${mode.enabled ? "primary" : "ghost"}" data-action="create-mode-room" data-mode="${escapeHtml(mode.id)}" ${mode.enabled ? "" : "disabled"}>${mode.enabled ? "Создать в этом режиме" : "Скоро"}</button>
-        </article>
-      `).join("")}
-    </div>
+    <p class="meta centered-meta mode-select-lead">Карточки работают как пресеты: выбираешь механику, а детали меняешь уже в лобби.</p>
+    <section class="mode-select-stage" aria-label="Выбор режима игры">
+      <div class="mode-stage-head">
+        <span class="mode-stage-tab is-active">Режимы</span>
+        <span class="mode-stage-tab">Настройки будут в лобби</span>
+      </div>
+      <div class="mode-grid">
+        ${modes.map((mode) => `
+          <article
+            class="mode-card ${mode.enabled ? "" : "disabled-mode"}"
+            data-action="create-mode-room"
+            data-mode="${escapeHtml(mode.id)}"
+            role="button"
+            tabindex="0"
+            aria-disabled="${mode.enabled ? "false" : "true"}"
+          >
+            <div class="mode-illustration">${gameModeIconSvg(mode.id)}</div>
+            <div class="mode-card-body">
+              <div class="mode-card-top">
+                <span class="mode-min">${mode.minPlayers}+ игрока</span>
+                <span class="mode-pick">Выбрать</span>
+              </div>
+              <h3>${escapeHtml(mode.title)}</h3>
+              <p class="mode-description">${escapeHtml(mode.description)}</p>
+            </div>
+            <div class="mode-tags">${mode.tags.slice(0, 3).map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}</div>
+          </article>
+        `).join("")}
+      </div>
+    </section>
     <div class="actions create-actions">
       <button class="btn ghost" data-route="home">Назад</button>
     </div>
