@@ -70,41 +70,41 @@ const GAME_MODES = {
     id: "duel_tournament",
     title: "Дуэльный турнир",
     shortTitle: "Дуэль",
-    description: "Дуэли и трио-бои по сетке: четвертьфинал, полуфинал, финал.",
-    status: "Следующий патч",
+    description: "Дуэли и трио-бои по сетке. Начала для боя пишут игроки вне текущей дуэли.",
+    status: "Готово",
     minPlayers: 3,
     tags: ["турнир", "сетка", "3+ игрока"],
-    enabled: false
+    enabled: true
   },
   guess_author: {
     id: "guess_author",
     title: "Угадай автора",
     shortTitle: "Угадай автора",
     description: "Сначала угадываем автора начала/концовки, потом голосуем за шутку.",
-    status: "Следующий патч",
+    status: "Готово",
     minPlayers: 3,
     tags: ["угадайка", "анонимно", "3+ игрока"],
-    enabled: false
+    enabled: true
   },
   chaos_chain: {
     id: "chaos_chain",
     title: "Цепочка хаоса",
     shortTitle: "Цепочка",
     description: "Каждый видит только предыдущий кусок истории и продолжает вслепую.",
-    status: "Следующий патч",
+    status: "Готово",
     minPlayers: 3,
     tags: ["история", "хаос", "3+ игрока"],
-    enabled: false
+    enabled: true
   },
   story_chain: {
     id: "story_chain",
     title: "Шутка с продолжением",
     shortTitle: "История",
     description: "История собирается по частям, каждый видит весь предыдущий контекст.",
-    status: "Следующий патч",
+    status: "Готово",
     minPlayers: 3,
     tags: ["история", "контекст", "3+ игрока"],
-    enabled: false
+    enabled: true
   }
 };
 
@@ -136,7 +136,7 @@ const CUSTOM_PACK_NAME_LIMIT = 36;
 
 
 const COPY = {
-  appTitle: "Добей фразу",
+  appTitle: "Textic Chat",
   tagline: "игра для компании друзей",
   labels: {
     name: "Ваш ник",
@@ -216,6 +216,7 @@ const COPY = {
     prompting: (round) => `Раунд ${round}: кинь начало`,
     answering: "Добей фразу, пока не передумал",
     revealing: "Готовые шутки",
+    guessing: "Угадай автора",
     voting: "Голосование",
     starting: "Игра начинается",
     scoreboard: (round) => `Раунд ${round} · Итоги`,
@@ -228,7 +229,9 @@ const COPY = {
     name: "Например, Артур",
     roomCode: "ABCD",
     prompt: "Когда хост сказал 'быстро сыграем один раунд'...",
-    answer: "...и все поняли, что вечер только начинается."
+    answer: "...и все поняли, что вечер только начинается.",
+    chaosStart: "Начни странную историю одним куском...",
+    chaosContinue: "Продолжи этот кусок так, будто знаешь, что происходит..."
   },
   settings: {
     rounds: "Количество раундов",
@@ -659,6 +662,71 @@ function getMe() {
 
 function isHost() {
   return currentRoom?.hostId === getMyId();
+}
+
+function isDuelMode() {
+  return currentRoom?.gameMode === "duel_tournament";
+}
+
+function currentDuelBattle() {
+  return isDuelMode() ? currentRoom?.duel?.currentBattle : null;
+}
+
+function duelParticipantIds() {
+  return new Set(currentDuelBattle()?.participantIds || []);
+}
+
+function isDuelParticipant(playerId = getMyId()) {
+  return duelParticipantIds().has(playerId);
+}
+
+function duelPromptAuthors() {
+  const participants = duelParticipantIds();
+  return activeLobbyPlayers().filter((player) => player.connected && !participants.has(player.id));
+}
+
+function isDuelPromptAuthor(playerId = getMyId()) {
+  if (!isDuelMode() || currentRoom?.state !== "prompting") return true;
+  return duelPromptAuthors().some((player) => player.id === playerId);
+}
+
+function expectedPromptCount() {
+  if (isDuelMode() && currentRoom?.state === "prompting") return duelPromptAuthors().length;
+  return activeLobbyPlayers().filter((player) => player.connected).length;
+}
+
+function expectedAnswerers() {
+  if (isDuelMode() && currentDuelBattle()) {
+    const participants = duelParticipantIds();
+    return activeLobbyPlayers().filter((player) => player.connected && participants.has(player.id));
+  }
+  return activeLobbyPlayers().filter((player) => player.connected);
+}
+
+function expectedVoters() {
+  if (isDuelMode() && currentDuelBattle()) {
+    const participants = duelParticipantIds();
+    const judges = activeLobbyPlayers().filter((player) => player.connected && !participants.has(player.id));
+    return judges.length ? judges : activeLobbyPlayers().filter((player) => player.connected);
+  }
+  return activeLobbyPlayers().filter((player) => player.connected);
+}
+
+function canVoteCurrentRound() {
+  if (!isDuelMode() || !currentDuelBattle()) return true;
+  return expectedVoters().some((player) => player.id === getMyId());
+}
+
+function duelBattleNames() {
+  const battle = currentDuelBattle();
+  return (battle?.participantIds || []).map((id) => getPlayerName(id)).join(" vs ");
+}
+
+function duelBattleTitle() {
+  if (!isDuelMode()) return "Дуэльный турнир";
+  const stage = currentRoom?.duel?.stageName || "Бой";
+  const names = duelBattleNames();
+  return names ? `${stage} · ${names}` : stage;
 }
 
 function getPlayerName(id) {
@@ -1259,7 +1327,7 @@ function buildShareCanvas(joke, { label = "Шутка вечера" } = {}) {
   ctx.textAlign = "center";
   ctx.fillStyle = "#f7f1e8";
   ctx.font = "900 82px Arial, sans-serif";
-  ctx.fillText("Добей фразу", 540, 185);
+  ctx.fillText("Textic Chat", 540, 185);
 
   ctx.font = "800 34px Arial, sans-serif";
   ctx.fillStyle = "#ffd166";
@@ -1331,10 +1399,10 @@ async function shareJokeCard(joke, options = {}) {
     const canvas = buildShareCanvas(joke, options);
     const blob = await canvasToBlob(canvas);
     if (!blob) throw new Error("empty image");
-    const file = new File([blob], "dobey-frazu-share.png", { type: "image/png" });
+    const file = new File([blob], "textic-chat-share.png", { type: "image/png" });
     const shareData = {
-      title: "Добей фразу",
-      text: "Шутка из игры “Добей фразу”",
+      title: "Textic Chat",
+      text: "Шутка из игры Textic Chat",
       files: [file]
     };
     if (navigator.canShare?.(shareData) && navigator.share) {
@@ -1345,7 +1413,7 @@ async function shareJokeCard(joke, options = {}) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = "dobey-frazu-share.png";
+    link.download = "textic-chat-share.png";
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -1360,7 +1428,7 @@ async function shareInviteLink(code) {
   const url = inviteLink(code);
   if (navigator.share) {
     try {
-      await navigator.share({ title: "Добей фразу", text: "Заходи в лобби", url });
+      await navigator.share({ title: "Textic Chat", text: "Заходи в лобби", url });
       return;
     } catch (error) {
       // fallback below
@@ -1486,12 +1554,18 @@ function renderSettingsModal() {
 function updateModeSettingsUi() {
   const modeId = currentRoom?.gameMode || "classic_pairs";
   const promptMode = document.getElementById("promptMode")?.value || DEFAULT_ROOM_SETTINGS.promptMode;
-  const hideRounds = modeId === "shared_prompt" && promptMode === "manual";
+  const hideRounds = modeId === "duel_tournament" || modeId === "chaos_chain" || modeId === "story_chain" || (modeId === "shared_prompt" && promptMode === "manual");
   document.querySelectorAll(".rounds-field").forEach((field) => {
     field.classList.toggle("is-hidden-by-mode", hideRounds);
   });
   document.querySelectorAll(".shared-rounds-hint").forEach((hint) => {
-    hint.textContent = modeId === "shared_prompt" ? COPY.settings.sharedRoundsHint : "";
+    hint.textContent = modeId === "duel_tournament"
+      ? "Дуэльный турнир сам строит сетку по количеству игроков."
+      : (modeId === "chaos_chain"
+        ? "Цепочка хаоса идёт одной историей: игрок видит только предыдущий кусок."
+        : (modeId === "story_chain"
+          ? "Шутка с продолжением идёт одной историей: игрок видит весь предыдущий контекст."
+          : (modeId === "shared_prompt" ? COPY.settings.sharedRoundsHint : "")));
   });
 }
 
@@ -2095,8 +2169,15 @@ function roomControlsHtml() {
 
   if (["prompting", "collectingSharedPrompts"].includes(currentRoom.state)) {
     const submitted = hasSubmittedPrompt();
-    if (!submitted || promptEditMode) {
-      primaryAction = `<button class="btn primary" data-action="submit-prompt">${submitted ? COPY.buttons.updatePrompt : COPY.buttons.submitPrompt}</button>`;
+    if (isDuelMode() && !isDuelPromptAuthor()) {
+      statusNote = `<span class="meta room-controls-note">Сейчас бьются: ${escapeHtml(duelBattleNames())}. Ждём начало от игроков вне боя.</span>`;
+    } else if (!submitted || promptEditMode) {
+      const promptButtonText = currentRoom.gameMode === "duel_tournament"
+        ? (submitted ? "Обновить начало боя" : "Дать начало для боя")
+        : (["chaos_chain", "story_chain"].includes(currentRoom.gameMode)
+          ? (submitted ? "Обновить начало истории" : "Начать историю")
+          : (submitted ? COPY.buttons.updatePrompt : COPY.buttons.submitPrompt));
+      primaryAction = `<button class="btn primary" data-action="submit-prompt">${promptButtonText}</button>`;
     } else {
       statusNote = `<span class="meta room-controls-note">Начало отправлено. Можно изменить, пока идёт таймер.</span>`;
     }
@@ -2104,10 +2185,17 @@ function roomControlsHtml() {
 
   if (currentRoom.state === "answering") {
     const submitted = hasSubmittedAnswer();
-    if (!submitted || answerEditMode) {
-      primaryAction = `<button class="btn primary" data-action="submit-answer">${submitted ? COPY.buttons.updateAnswer : COPY.buttons.submitAnswer}</button>`;
+    if (isDuelMode() && !currentRoom.assignments?.[getMyId()]) {
+      statusNote = `<span class="meta room-controls-note">Ты судья этого боя. Ждём ответы дуэлянтов.</span>`;
+    } else if (!submitted || answerEditMode) {
+      const answerButtonText = currentRoom.gameMode === "duel_tournament"
+        ? (submitted ? "Обновить ответ" : "Ответить в бою")
+        : (["chaos_chain", "story_chain"].includes(currentRoom.gameMode)
+          ? (submitted ? "Обновить кусок" : "Продолжить историю")
+          : (submitted ? COPY.buttons.updateAnswer : COPY.buttons.submitAnswer));
+      primaryAction = `<button class="btn primary" data-action="submit-answer">${answerButtonText}</button>`;
     } else {
-      statusNote = `<span class="meta room-controls-note">Концовка отправлена. Можно изменить, пока идёт таймер.</span>`;
+      statusNote = `<span class="meta room-controls-note">${["chaos_chain", "story_chain"].includes(currentRoom.gameMode) ? "Кусок отправлен" : "Ответ отправлен"}. Можно изменить, пока идёт таймер.</span>`;
     }
   }
 
@@ -2115,6 +2203,12 @@ function roomControlsHtml() {
     primaryAction = isHost()
       ? `<button class="btn primary" data-action="start-voting">${COPY.buttons.startVoting}</button>`
       : `<span class="meta room-controls-note">${COPY.messages.hostStartsVoting}</span>`;
+  }
+
+  if (currentRoom.state === "guessing") {
+    primaryAction = hasSubmittedGuesses()
+      ? `<span class="meta room-controls-note">Ответы отправлены. Ждём остальных.</span>`
+      : `<button class="btn primary" data-action="submit-guesses">Отправить догадки</button>`;
   }
 
   if (currentRoom.state === "grandVoting") {
@@ -2125,8 +2219,9 @@ function roomControlsHtml() {
 
   if (currentRoom.state === "scoreboard") {
     const isFinalNext = currentRoom.round >= currentRoom.maxRounds;
+    const duelNextText = isDuelMode() ? (currentRoom.duel?.complete ? "Финал турнира" : "Следующий бой") : null;
     primaryAction = isHost()
-      ? `<button class="btn primary" data-action="next-round">${isFinalNext ? COPY.buttons.final : COPY.buttons.nextRound}</button>`
+      ? `<button class="btn primary" data-action="next-round">${duelNextText || (isFinalNext ? COPY.buttons.final : COPY.buttons.nextRound)}</button>`
       : `<span class="meta room-controls-note">${COPY.messages.hostDecision}</span>`;
   }
 
@@ -2211,10 +2306,11 @@ function spectatorStateText() {
   const map = {
     waiting: "Лобби собирается. Можно показать QR друзьям или ждать старта.",
     starting: "Игра скоро начнётся. Зритель смотрит, но не занимает место игрока.",
-    prompting: "Игроки придумывают начала фраз.",
+    prompting: currentRoom?.gameMode === "duel_tournament" ? "Игроки вне боя пишут начало для дуэли." : (currentRoom?.gameMode === "chaos_chain" ? "Игроки начинают свои цепочки хаоса." : (currentRoom?.gameMode === "story_chain" ? "Игроки начинают истории с продолжением." : "Игроки придумывают начала фраз.")),
     collectingSharedPrompts: "Каждый игрок пишет одно начало. Потом каждое начало станет отдельным раундом.",
-    answering: "Игроки добивают фразы.",
+    answering: currentRoom?.gameMode === "duel_tournament" ? "Участники боя добивают фразу, остальные ждут голосования." : (currentRoom?.gameMode === "chaos_chain" ? "Игроки продолжают цепочки, видя только прошлый кусок." : (currentRoom?.gameMode === "story_chain" ? "Игроки продолжают историю, видя весь контекст." : "Игроки добивают фразы.")),
     revealing: "Шутки раскрываются.",
+    guessing: "Игроки угадывают авторов шуток.",
     voting: "Игроки голосуют за смешные варианты.",
     scoreboard: "Идут итоги раунда.",
     grandVoting: "Игроки выбирают шутку вечера.",
@@ -2271,24 +2367,37 @@ function renderPrompting({ sharedCollection = false } = {}) {
   const audio = getPromptAudioDraft();
   const connectedCount = activeLobbyPlayers().filter((p) => p.connected).length;
   const isEditing = !submitted || promptEditMode;
-  const title = sharedCollection ? "Собираем начала" : `Раунд ${currentRoom.round} · Кинь начало`;
-  const lead = sharedCollection
-    ? "Каждый пишет одно начало. Потом каждое начало станет отдельным раундом, и все будут добивать его по очереди."
-    : "Придумайте начало фразы для другого игрока.";
+  const isDuel = currentRoom.gameMode === "duel_tournament";
+  const isChaos = currentRoom.gameMode === "chaos_chain";
+  const isStory = currentRoom.gameMode === "story_chain";
+  const isChain = isChaos || isStory;
+  const canWriteDuelPrompt = !isDuel || isDuelPromptAuthor();
+  const title = isDuel ? `${duelBattleTitle()} · начало` : (isChaos ? "Цепочка хаоса · начало" : (isStory ? "Шутка с продолжением · начало" : (sharedCollection ? "Собираем начала" : `Раунд ${currentRoom.round} · Кинь начало`)));
+  const lead = isDuel
+    ? "Игроки вне текущего боя пишут начало. Потом дуэлянты будут добивать выбранную фразу."
+    : (isChaos
+      ? "Напиши первый кусок истории. Дальше другие игроки будут продолжать цепочку, видя только последний кусок."
+      : (isStory
+        ? "Напиши первый кусок истории. Дальше игроки будут продолжать её, видя весь накопленный контекст."
+        : (sharedCollection
+          ? "Каждый пишет одно начало. Потом каждое начало станет отдельным раундом, и все будут добивать его по очереди."
+          : "Придумайте начало фразы для другого игрока.")));
   app.classList.add("game-stage-card", "compact-game-stage-card");
   app.innerHTML = `
     <div class="game-stage input-stage">
-      ${stageTitle(title, sharedCollection ? "режим: одна фраза на всех" : "")}
+      ${stageTitle(title, isDuel ? "режим: дуэльный турнир" : (isChaos ? "режим: цепочка хаоса" : (isStory ? "режим: шутка с продолжением" : (sharedCollection ? "режим: одна фраза на всех" : ""))))}
       <section class="input-stage-panel no-shell-panel">
         ${timerHtml()}
         <p class="meta centered-meta shared-mode-lead">${escapeHtml(lead)}</p>
-        ${isEditing ? `
-          <textarea id="promptInput" maxlength="160" placeholder="${COPY.placeholders.prompt}">${escapeHtml(draft)}</textarea>
+        ${isDuel && !canWriteDuelPrompt ? `
+          <div class="prompt-box stage-message centered-meta">Ты участник боя или ждёшь своей очереди. Начало для этого боя пишут судьи вне дуэли.</div>
+        ` : (isEditing ? `
+          <textarea id="promptInput" maxlength="160" placeholder="${isChain ? COPY.placeholders.chaosStart : COPY.placeholders.prompt}">${escapeHtml(draft)}</textarea>
           ${audioInputHtml("prompt")}
-        ` : submittedBlockHtml({ type: "prompt", text: myPrompt?.text || "", audio: myPrompt?.audio || null })}
+        ` : submittedBlockHtml({ type: "prompt", text: myPrompt?.text || "", audio: myPrompt?.audio || null }))}
         <div class="progress-card">
           <h3 class="section-title">${COPY.labels.progress}</h3>
-          <p class="meta">${currentRoom.prompts.length} из ${connectedCount} отправили начало. ${sharedCollection ? `Раундов будет: ${Math.max(1, currentRoom.prompts.length)}.` : randomWaitingMessage(currentRoom.prompts.length)}</p>
+          <p class="meta">${currentRoom.prompts.length} из ${isDuel ? expectedPromptCount() : connectedCount} отправили начало. ${isDuel ? `Бой: ${escapeHtml(duelBattleNames())}.` : (isChaos ? "Собираем первые куски цепочек." : (isStory ? "Собираем первые куски историй." : (sharedCollection ? `Раундов будет: ${Math.max(1, currentRoom.prompts.length)}.` : randomWaitingMessage(currentRoom.prompts.length))))}</p>
         </div>
       </section>
     </div>
@@ -2305,26 +2414,48 @@ function renderAnswering() {
   const connectedCount = currentRoom.players.filter((p) => p.connected).length;
   const isEditing = !submitted || answerEditMode;
 
+  const duelMode = currentRoom.gameMode === "duel_tournament";
   const sharedMode = currentRoom.gameMode === "shared_prompt";
-  const stageName = sharedMode ? `Раунд ${currentRoom.round} · Все добивают` : "Добей фразу";
-  const eyebrow = sharedMode ? "одна фраза на всех" : "";
+  const chaosMode = currentRoom.gameMode === "chaos_chain";
+  const storyMode = currentRoom.gameMode === "story_chain";
+  const chainMode = chaosMode || storyMode;
+  const stageName = duelMode ? duelBattleTitle() : (chaosMode ? `Цепочка хаоса · шаг ${currentRoom.chaosStep || 2}` : (storyMode ? `Шутка с продолжением · шаг ${currentRoom.chaosStep || 2}` : (sharedMode ? `Раунд ${currentRoom.round} · Все добивают` : "Добей фразу")));
+  const eyebrow = duelMode ? "дуэльный турнир" : (chaosMode ? "виден только предыдущий кусок" : (storyMode ? "виден весь контекст истории" : (sharedMode ? "одна фраза на всех" : "")));
   app.classList.add("game-stage-card", "compact-game-stage-card");
+  if (duelMode && !currentRoom.assignments?.[getMyId()]) {
+    app.innerHTML = `
+      <div class="game-stage input-stage">
+        ${stageTitle(stageName, eyebrow)}
+        <section class="input-stage-panel no-shell-panel">
+          ${timerHtml()}
+          <div class="prompt-box stage-prompt">${escapeHtml(prompt?.text || "Начало боя уже выбрано")}${audioPlayerHtml(prompt?.audio || null, { compact: true })}</div>
+          <div class="progress-card">
+            <h3 class="section-title">Ты судья этого боя</h3>
+            <p class="meta">Участники пишут ответы. После этого ты сможешь проголосовать за победителя боя.</p>
+          </div>
+        </section>
+      </div>
+    `;
+    return;
+  }
   app.innerHTML = `
     <div class="game-stage input-stage">
       ${stageTitle(stageName, eyebrow)}
       <section class="input-stage-panel no-shell-panel">
         ${timerHtml()}
-        <div class="prompt-box stage-prompt">
-          ${escapeHtml(prompt?.text || (prompt?.audio ? "Голосовое начало" : COPY.empty.promptMissing))}
-          ${audioPlayerHtml(prompt?.audio || null, { compact: true })}
+        <div class="prompt-box stage-prompt ${chainMode ? "chain-context-box" : ""}">
+          ${chaosMode ? `<span class="chain-piece-label">Предыдущий кусок</span>` : ""}
+          ${storyMode ? `<span class="chain-piece-label">История до тебя</span>` : ""}
+          ${storyMode && Array.isArray(prompt?.chainPreviewSegments) ? chainSegmentsHtml(prompt.chainPreviewSegments) : escapeHtml(prompt?.text || (prompt?.audio ? "Голосовое начало" : COPY.empty.promptMissing))}
+          ${!storyMode ? audioPlayerHtml(prompt?.audio || null, { compact: true }) : ""}
         </div>
         ${isEditing ? `
-          <textarea id="answerInput" maxlength="180" placeholder="${COPY.placeholders.answer}">${escapeHtml(draft)}</textarea>
+          <textarea id="answerInput" maxlength="180" placeholder="${chainMode ? COPY.placeholders.chaosContinue : COPY.placeholders.answer}">${escapeHtml(draft)}</textarea>
           ${audioInputHtml("answer")}
         ` : submittedBlockHtml({ type: "answer", text: myAnswer?.text || "", audio: myAnswer?.audio || null })}
         <div class="progress-card">
           <h3 class="section-title">${COPY.labels.progress}</h3>
-          <p class="meta">${currentRoom.answers.length} из ${connectedCount} отправили концовку. ${randomWaitingMessage(currentRoom.answers.length + 2)}</p>
+          <p class="meta">${currentRoom.answers.length} из ${duelMode ? expectedAnswerers().length : connectedCount} отправили ${chainMode ? "продолжение" : (duelMode ? "ответ в бою" : "концовку")}. ${duelMode ? "Ждём ответы участников боя." : (chaosMode ? "Цепочка ждёт последние куски." : (storyMode ? "История ждёт продолжения." : randomWaitingMessage(currentRoom.answers.length + 2)))}</p>
         </div>
       </section>
     </div>
@@ -2339,14 +2470,31 @@ function jokeText(answer, revealAuthor) {
   return `${promptLine}\n${answerLine}${author}`;
 }
 
-function jokeCardHtml({ meta, promptText, answerText, promptAudio = null, answerAudio = null, actions = "", winner = false, compact = false }) {
+function chainSegmentsHtml(segments = []) {
+  if (!Array.isArray(segments) || !segments.length) return "";
   return `
-    <article class="joke game-joke-card ${winner ? "winner-joke" : ""} ${compact ? "compact-joke" : ""}">
+    <div class="chain-story-list">
+      ${segments.map((segment, index) => `
+        <div class="chain-story-piece">
+          <div class="meta">Кусок ${index + 1}${segment.authorId ? ` · ${escapeHtml(getPlayerName(segment.authorId))}` : ""}</div>
+          <div class="chain-story-text">${escapeHtml(segment.text || (segment.audio ? "Голосовой кусок" : "..."))}</div>
+          ${audioPlayerHtml(segment.audio || null, { compact: true })}
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function jokeCardHtml({ meta, promptText, answerText, promptAudio = null, answerAudio = null, chainSegments = null, actions = "", winner = false, compact = false }) {
+  return `
+    <article class="joke game-joke-card ${winner ? "winner-joke" : ""} ${compact ? "compact-joke" : ""} ${chainSegments ? "chain-joke-card" : ""}">
       <div class="meta joke-meta">${escapeHtml(meta)}</div>
-      <div class="joke-start">${escapeHtml(promptText || (promptAudio ? "Голосовое начало" : ""))}</div>
-      ${audioPlayerHtml(promptAudio, { compact: true })}
-      <div class="joke-end">${escapeHtml(answerText || (answerAudio ? "Голосовая концовка" : ""))}</div>
-      ${audioPlayerHtml(answerAudio, { compact: true })}
+      ${chainSegments ? chainSegmentsHtml(chainSegments) : `
+        <div class="joke-start">${escapeHtml(promptText || (promptAudio ? "Голосовое начало" : ""))}</div>
+        ${audioPlayerHtml(promptAudio, { compact: true })}
+        <div class="joke-end">${escapeHtml(answerText || (answerAudio ? "Голосовая концовка" : ""))}</div>
+        ${audioPlayerHtml(answerAudio, { compact: true })}
+      `}
       ${actions ? `<div class="actions joke-actions">${actions}</div>` : ""}
     </article>
   `;
@@ -2361,7 +2509,7 @@ function jokesHtml({ voting = false, revealAuthor = false } = {}) {
         const meta = `Шутка ${index + 1}${revealAuthor ? ` · автор: ${getPlayerName(answer.authorId)}` : ""}`;
         const actions = `
           <button class="btn ghost" data-action="copy-joke" data-answer-id="${answer.id}" data-reveal-author="${revealAuthor ? "1" : "0"}">${COPY.buttons.copyJoke}</button>
-          ${voting ? `<button class="btn primary" data-action="vote" data-answer-id="${answer.id}" ${own || hasVoted() ? "disabled" : ""}>${own ? COPY.buttons.ownAnswer : COPY.buttons.vote}</button>` : ""}
+          ${voting ? `<button class="btn primary" data-action="vote" data-answer-id="${answer.id}" ${own || hasVoted() || !canVoteCurrentRound() ? "disabled" : ""}>${own ? COPY.buttons.ownAnswer : (!canVoteCurrentRound() ? "Ждём судей" : COPY.buttons.vote)}</button>` : ""}
         `;
         return jokeCardHtml({
           meta,
@@ -2369,6 +2517,7 @@ function jokesHtml({ voting = false, revealAuthor = false } = {}) {
           answerText: answer.text || "",
           promptAudio: prompt?.audio || null,
           answerAudio: answer.audio || null,
+          chainSegments: answer.chainSegments || null,
           actions
         });
       }).join("")}
@@ -2381,20 +2530,69 @@ function renderRevealing() {
   app.classList.add("game-stage-card", "compact-game-stage-card");
   app.innerHTML = `
     <div class="game-stage reveal-stage">
-      ${stageTitle(`Раунд ${currentRoom.round} · Готовые шутки`)}
+      ${stageTitle(currentRoom.gameMode === "duel_tournament" ? `${duelBattleTitle()} · ответы готовы` : (currentRoom.gameMode === "chaos_chain" ? "Цепочка хаоса · готовые истории" : (currentRoom.gameMode === "story_chain" ? "Шутка с продолжением · готовые истории" : `Раунд ${currentRoom.round} · Готовые шутки`)))}
       ${jokesHtml({ revealAuthor })}
     </div>
   `;
 }
 
+function hasSubmittedGuesses() {
+  return Boolean(currentRoom?.guesses?.some((entry) => entry.playerId === getMyId()));
+}
+
+function guessSelectHtml(answerId, field, selected = "") {
+  const options = [`<option value="">Не знаю</option>`].concat(
+    currentRoom.players.map((player) => `<option value="${escapeHtml(player.id)}" ${selected === player.id ? "selected" : ""}>${escapeHtml(player.name)}</option>`)
+  ).join("");
+  return `<select class="guess-select" data-answer-id="${escapeHtml(answerId)}" data-guess-field="${escapeHtml(field)}">${options}</select>`;
+}
+
+function renderGuessing() {
+  const submitted = hasSubmittedGuesses();
+  app.classList.add("game-stage-card", "compact-game-stage-card");
+  const guessCards = currentRoom.answers.map((answer, index) => {
+    const prompt = getPrompt(answer.promptId);
+    const actions = submitted ? "" : `
+      <div class="guess-fields" data-guess-card="${escapeHtml(answer.id)}">
+        <label>
+          <span>Кто написал начало?</span>
+          ${guessSelectHtml(answer.id, "prompt")}
+        </label>
+        <label>
+          <span>Кто добил?</span>
+          ${guessSelectHtml(answer.id, "answer")}
+        </label>
+      </div>
+    `;
+    return jokeCardHtml({
+      meta: `Шутка ${index + 1} · авторы скрыты`,
+      promptText: prompt?.text || "",
+      answerText: answer.text || "",
+      promptAudio: prompt?.audio || null,
+      answerAudio: answer.audio || null,
+      actions
+    });
+  }).join("");
+
+  app.innerHTML = `
+    <div class="game-stage guess-stage">
+      ${stageTitle(`Раунд ${currentRoom.round} · Угадай автора`)}
+      <div class="stage-timer-row">${timerHtml()}</div>
+      <p class="prompt-box stage-message centered-meta">Сначала попробуйте угадать, кто написал начало и кто добил. Потом будет обычное голосование за лучшую шутку.</p>
+      ${submitted ? `<p class="prompt-box stage-message centered-meta">Ответы отправлены. Ждём остальных игроков.</p>` : ""}
+      <div class="jokes stage-jokes guess-jokes">${guessCards}</div>
+    </div>
+  `;
+}
+
 function renderVoting() {
-  const revealAuthor = !currentRoom.settings.anonymousMode;
+  const revealAuthor = currentRoom.gameMode === "guess_author" ? false : !currentRoom.settings.anonymousMode;
   app.classList.add("game-stage-card", "compact-game-stage-card");
   app.innerHTML = `
     <div class="game-stage reveal-stage">
-      ${stageTitle(`Раунд ${currentRoom.round} · Голосование`)}
+      ${stageTitle(currentRoom.gameMode === "duel_tournament" ? `${duelBattleTitle()} · голосование` : (currentRoom.gameMode === "chaos_chain" ? "Цепочка хаоса · голосование" : (currentRoom.gameMode === "story_chain" ? "Шутка с продолжением · голосование" : `Раунд ${currentRoom.round} · Голосование`)))}
       <div class="stage-timer-row">${timerHtml()}</div>
-      ${hasVoted() ? `<p class="prompt-box stage-message centered-meta">${COPY.messages.voteSubmitted}</p>` : ""}
+      ${hasVoted() ? `<p class="prompt-box stage-message centered-meta">${COPY.messages.voteSubmitted}</p>` : (isDuelMode() && !canVoteCurrentRound() ? `<p class="prompt-box stage-message centered-meta">Ты участник этого боя. Голосуют судьи вне дуэли.</p>` : "")}
       ${jokesHtml({ voting: true, revealAuthor })}
     </div>
   `;
@@ -2438,6 +2636,7 @@ function historyHtml() {
             answerText: latest.answerText,
             promptAudio: latest.promptAudio || null,
             answerAudio: latest.answerAudio || null,
+            chainSegments: latest.chainSegments || null,
             compact: true,
             actions: `<button class="btn ghost compact-btn" data-action="copy-history" data-history-index="${latestIndex}">${COPY.buttons.copy}</button><button class="btn ghost compact-btn" data-action="share-history" data-history-index="${latestIndex}">${COPY.buttons.shareCard}</button>`
           })}
@@ -2451,6 +2650,7 @@ function historyHtml() {
               answerText: joke.answerText,
               promptAudio: joke.promptAudio || null,
               answerAudio: joke.answerAudio || null,
+              chainSegments: joke.chainSegments || null,
               compact: true,
               actions: `<button class="btn ghost compact-btn" data-action="copy-history" data-history-index="${index}">${COPY.buttons.copy}</button><button class="btn ghost compact-btn" data-action="share-history" data-history-index="${index}">${COPY.buttons.shareCard}</button>`
             })).join("")}
@@ -2486,7 +2686,7 @@ function renderScoreboard() {
   app.classList.add("game-stage-card", "scoreboard-stage-card");
   app.innerHTML = `
     <div class="game-stage scoreboard-stage">
-      ${stageTitle(COPY.screens.scoreboard(currentRoom.round))}
+      ${stageTitle(currentRoom.gameMode === "duel_tournament" ? `${duelBattleTitle()} · итоги боя` : COPY.screens.scoreboard(currentRoom.round))}
       ${scoresHtml()}
 
       <section class="stage-section">
@@ -2499,6 +2699,7 @@ function renderScoreboard() {
             answerText: result.answerText,
             promptAudio: result.promptAudio || null,
             answerAudio: result.answerAudio || null,
+            chainSegments: result.chainSegments || null,
             winner: result.isRoundWinner
           })).join("")}
         </div>
@@ -2514,6 +2715,7 @@ function renderScoreboard() {
               answerText: joke.answerText,
               promptAudio: joke.promptAudio || null,
               answerAudio: joke.answerAudio || null,
+              chainSegments: joke.chainSegments || null,
               winner: true,
               actions: `<button class="btn yellow" data-action="copy-best" data-best-index="${index}">${COPY.buttons.copyBest}</button>`
             })).join("")}
@@ -2548,6 +2750,7 @@ function grandFinalCandidatesHtml({ finished = false } = {}) {
           answerText: joke.answerText,
           promptAudio: joke.promptAudio || null,
           answerAudio: joke.answerAudio || null,
+          chainSegments: joke.chainSegments || null,
           winner: isWinner,
           actions: finished
             ? `<button class="btn ghost compact-btn" data-action="share-grand-joke" data-joke-id="${escapeHtml(joke.jokeId)}">${COPY.buttons.shareCard}</button>`
@@ -2633,6 +2836,7 @@ function renderFinalSummary() {
             answerText: joke.answerText,
             promptAudio: joke.promptAudio || null,
             answerAudio: joke.answerAudio || null,
+            chainSegments: joke.chainSegments || null,
             winner: true,
             actions: `<button class="btn ghost compact-btn" data-action="share-grand-joke" data-joke-id="${escapeHtml(joke.jokeId)}">${COPY.buttons.shareCard}</button>`
           })).join("")}
@@ -2738,7 +2942,7 @@ function render() {
   );
   document.body.classList.toggle("create-screen", !currentRoom && currentScreen === "create");
   document.body.classList.toggle("waiting-screen", Boolean(currentRoom && currentRoom.state === "waiting"));
-  document.body.classList.toggle("stage-screen", Boolean(currentRoom && ["starting", "collectingSharedPrompts", "prompting", "answering", "revealing", "voting"].includes(currentRoom.state)));
+  document.body.classList.toggle("stage-screen", Boolean(currentRoom && ["starting", "collectingSharedPrompts", "prompting", "answering", "revealing", "guessing", "voting"].includes(currentRoom.state)));
   document.body.classList.toggle("scoreboard-screen", Boolean(currentRoom && ["scoreboard", "grandVoting", "finished"].includes(currentRoom.state)));
   document.body.classList.toggle("has-room-controls", Boolean(currentRoom));
   if (!currentRoom) {
@@ -2784,6 +2988,7 @@ function render() {
   if (state === "prompting") renderPrompting();
   if (state === "answering") renderAnswering();
   if (state === "revealing") renderRevealing();
+  if (state === "guessing") renderGuessing();
   if (state === "voting") renderVoting();
   if (state === "scoreboard") renderScoreboard();
   if (state === "grandVoting") renderGrandVoting();
@@ -3250,7 +3455,7 @@ document.addEventListener("click", (event) => {
   if (action === "submit-prompt") {
     const text = document.getElementById("promptInput")?.value || "";
     const audio = getPromptAudioDraft();
-    if (!text.trim() && !audio) return showToast("Напишите начало фразы или добавьте аудио");
+    if (!text.trim() && !audio) return showToast(currentRoom?.gameMode === "duel_tournament" ? "Напишите начало для боя или добавьте аудио" : (["chaos_chain", "story_chain"].includes(currentRoom?.gameMode) ? "Напишите начало истории или добавьте аудио" : "Напишите начало фразы или добавьте аудио"));
     promptEditMode = false;
     socket.emit("submitPrompt", { text, audio });
   }
@@ -3258,9 +3463,24 @@ document.addEventListener("click", (event) => {
   if (action === "submit-answer") {
     const text = document.getElementById("answerInput")?.value || "";
     const audio = getAnswerAudioDraft();
-    if (!text.trim() && !audio) return showToast("Напишите концовку или добавьте аудио");
+    if (!text.trim() && !audio) return showToast(currentRoom?.gameMode === "duel_tournament" ? "Напишите ответ в бою или добавьте аудио" : (["chaos_chain", "story_chain"].includes(currentRoom?.gameMode) ? "Продолжите историю или добавьте аудио" : "Напишите концовку или добавьте аудио"));
     answerEditMode = false;
     socket.emit("submitAnswer", { text, audio });
+  }
+
+  if (action === "submit-guesses") {
+    const guessesByAnswer = new Map();
+    document.querySelectorAll(".guess-select[data-answer-id]").forEach((select) => {
+      const answerId = select.dataset.answerId;
+      const field = select.dataset.guessField;
+      if (!guessesByAnswer.has(answerId)) guessesByAnswer.set(answerId, { answerId, promptAuthorId: "", answerAuthorId: "" });
+      const item = guessesByAnswer.get(answerId);
+      if (field === "prompt") item.promptAuthorId = select.value;
+      if (field === "answer") item.answerAuthorId = select.value;
+    });
+    const guesses = [...guessesByAnswer.values()].filter((guess) => guess.promptAuthorId || guess.answerAuthorId);
+    if (!guesses.length) return showToast("Выберите хотя бы одного автора");
+    socket.emit("submitGuesses", { guesses });
   }
 
   if (action === "start-voting") socket.emit("startVoting");

@@ -102,7 +102,8 @@ const COPY = {
     cannotBanHost: "Хоста нельзя забанить. Сначала передайте хоста.",
     roleLocked: "Хост пока не дал возможность менять роль.",
     activePlayersFull: "Свободных мест игрока нет.",
-    noSharedPrompts: "Нужно хотя бы одно начало для режима «Все добивают одну фразу»."
+    noSharedPrompts: "Нужно хотя бы одно начало для режима «Все добивают одну фразу».",
+    noChaosChain: "Цепочка хаоса не смогла собрать истории. Попробуйте начать заново."
   },
   fallbackAnswer: "не успел придумать смешную концовку",
   fallbackPlayer: "аноним из оперативки",
@@ -494,7 +495,7 @@ const GAME_MODES = {
     description: "Игроки проходят сетку дуэлей и трио-боёв до финала.",
     minPlayers: 3,
     maxPlayers: 12,
-    implemented: false
+    implemented: true
   },
   guess_author: {
     id: "guess_author",
@@ -503,7 +504,7 @@ const GAME_MODES = {
     description: "Сначала угадываем авторов шуток, потом голосуем за лучшие.",
     minPlayers: 3,
     maxPlayers: 12,
-    implemented: false
+    implemented: true
   },
   chaos_chain: {
     id: "chaos_chain",
@@ -512,7 +513,7 @@ const GAME_MODES = {
     description: "Каждый продолжает историю, видя только предыдущий кусок.",
     minPlayers: 3,
     maxPlayers: 12,
-    implemented: false
+    implemented: true
   },
   story_chain: {
     id: "story_chain",
@@ -521,7 +522,7 @@ const GAME_MODES = {
     description: "История собирается по частям, все видят предыдущий контекст.",
     minPlayers: 3,
     maxPlayers: 12,
-    implemented: false
+    implemented: true
   }
 };
 
@@ -1086,23 +1087,29 @@ function maybeAdvanceAfterPlayerLeave(room) {
     return;
   }
 
-  if (room.state === "prompting" && connectedPlayers.every((player) => {
+  if (room.state === "prompting" && getExpectedPromptAuthors(room).every((player) => {
     return room.prompts.some((prompt) => prompt.authorId === player.id);
   })) {
     moveToAnswering(room);
     return;
   }
 
-  if (room.state === "answering" && connectedPlayers.every((player) => {
+  if (room.state === "answering" && getExpectedAnswerers(room).every((player) => {
     return room.answers.some((answer) => answer.authorId === player.id);
   })) {
     moveToRevealing(room);
     return;
   }
 
-  if (room.state === "voting" && connectedPlayers.every((player) => {
-    const ownOnly = room.answers.every((answerItem) => answerItem.authorId === player.id);
-    return ownOnly || room.votes.some((vote) => vote.voterId === player.id);
+  if (room.state === "guessing" && connectedPlayers.every((player) => {
+    return room.guesses.some((guess) => guess.playerId === player.id);
+  })) {
+    finishGuessing(room);
+    return;
+  }
+
+  if (room.state === "voting" && getExpectedVoters(room).every((player) => {
+    return room.votes.some((vote) => vote.voterId === player.id);
   })) {
     finishVoting(room);
   }
@@ -1173,6 +1180,8 @@ function resetRoundData(room) {
   room.assignmentMeta = {};
   room.answers = [];
   room.votes = [];
+  room.guesses = [];
+  room.guessResults = [];
   room.lastRoundResults = [];
   room.lastBestJoke = null;
   room.lastBestJokes = [];
@@ -1180,6 +1189,255 @@ function resetRoundData(room) {
   room.titles = [];
   clearRoomTimer(room);
 }
+
+function resetChaosData(room) {
+  room.chaosChains = [];
+  room.chaosStep = 1;
+  room.chaosTotalSteps = 0;
+  room.chaosActive = false;
+}
+
+function resetDuelData(room) {
+  room.duel = {
+    active: false,
+    stage: 0,
+    stageName: "",
+    stageParticipants: [],
+    battles: [],
+    currentBattleIndex: 0,
+    currentBattle: null,
+    stageWinners: [],
+    completedBattles: [],
+    championId: null,
+    complete: false
+  };
+}
+
+function makeAutoChaosPrompt(room, player = null, index = 0) {
+  const text = pickAutoPrompt(room.round + index + Date.now(), room, { playerId: player?.id || null });
+  return {
+    id: makeId("prompt"),
+    round: room.round,
+    authorId: player?.id || null,
+    text,
+    audio: null,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    submittedAtMs: 0,
+    versions: [{
+      version: 1,
+      text,
+      textLength: text.length,
+      audio: null,
+      audioMeta: null,
+      source: "auto",
+      createdAt: Date.now(),
+      elapsedMs: 0,
+      change: { type: "auto_fallback", editDistance: 0, changeRatio: 0, beforeLength: 0, afterLength: text.length, lengthDelta: text.length, audioAction: "none", audioDurationDelta: 0, audioSourceChanged: false }
+    }]
+  };
+}
+
+function fillMissingChaosPrompts(room) {
+  const submitted = new Set(room.prompts.map((prompt) => prompt.authorId).filter(Boolean));
+  const players = getConnectedPlayers(room);
+  players.forEach((player, index) => {
+    if (!submitted.has(player.id)) {
+      incrementPlayerStat(room, player.id, "missedPrompts");
+      logEvent(room, "miss_chaos_start", player.id, { fallback: "auto_chaos_start" });
+      room.prompts.push(makeAutoChaosPrompt(room, player, index));
+    }
+  });
+  if (!room.prompts.length) {
+    room.prompts.push(makeAutoChaosPrompt(room, players[0] || null, 0));
+  }
+}
+
+function segmentFromSubmission(item, step, chainId) {
+  return {
+    id: item.id || makeId("segment"),
+    chainId,
+    step,
+    authorId: item.authorId || null,
+    text: item.text || "",
+    audio: item.audio || null,
+    createdAt: item.createdAt || Date.now(),
+    submittedAtMs: item.submittedAtMs || 0,
+    snapshot: snapshotSubmission(item)
+  };
+}
+
+function startChaosOpening(room) {
+  resetRoundData(room);
+  resetChaosData(room);
+  room.round = 1;
+  room.maxRounds = 1;
+  room.chaosStep = 1;
+  room.chaosActive = true;
+  setRoomStage(room, "prompting");
+  setStageTimer(room, room.timers.promptSeconds, () => expirePrompting(room.code));
+  emitRoom(room);
+}
+
+function startChaosFromPrompts(room) {
+  clearRoomTimer(room);
+  fillMissingChaosPrompts(room);
+  const players = getConnectedPlayers(room);
+  const prompts = safeArray(room.prompts).filter((prompt) => prompt.text || prompt.audio);
+  const participantCount = players.length || prompts.length || 2;
+  const totalSteps = isStoryChainMode(room)
+    ? Math.min(5, Math.max(3, participantCount))
+    : (participantCount <= 3 ? 2 : 3);
+  room.chaosTotalSteps = totalSteps;
+  room.chaosStep = 2;
+  room.chaosActive = true;
+  room.chaosChains = prompts.map((prompt, index) => ({
+    id: makeId("chain"),
+    originPromptId: prompt.id,
+    originAuthorId: prompt.authorId || null,
+    index,
+    segments: [segmentFromSubmission(prompt, 1, null)]
+  }));
+  room.chaosChains.forEach((chain) => {
+    chain.segments[0].chainId = chain.id;
+  });
+  logEvent(room, "chaos_chain_start", null, { chains: room.chaosChains.length, totalSteps });
+  startChaosWritingStep(room);
+}
+
+function startChaosWritingStep(room) {
+  const players = getConnectedPlayers(room);
+  const chains = safeArray(room.chaosChains);
+  const storyMode = isStoryChainMode(room);
+  room.prompts = [];
+  room.answers = [];
+  room.votes = [];
+  room.assignments = {};
+  room.assignmentMeta = {};
+  if (!players.length || !chains.length) {
+    startChaosReveal(room);
+    return;
+  }
+
+  const offset = Math.max(1, (room.chaosStep || 2) - 1);
+  players.forEach((player, index) => {
+    const chain = chains[(index + offset) % chains.length] || chains[index % chains.length];
+    const previous = safeArray(chain.segments).at(-1);
+    if (!chain || !previous) return;
+    const prompt = {
+      id: makeId(storyMode ? "story-prompt" : "chaos-prompt"),
+      round: room.round,
+      authorId: previous.authorId || null,
+      text: storyMode ? chainStoryText(chain) : (previous.text || ""),
+      audio: storyMode ? null : (previous.audio || null),
+      chainId: chain.id,
+      previousSegmentId: previous.id,
+      chainPreviewSegments: storyMode ? safeArray(chain.segments) : [previous],
+      versions: []
+    };
+    room.prompts.push(prompt);
+    room.assignments[player.id] = prompt.id;
+    room.assignmentMeta[player.id] = {
+      chaos: true,
+      chainId: chain.id,
+      step: room.chaosStep,
+      previousSegmentId: previous.id
+    };
+  });
+
+  logEvent(room, "chaos_chain_step", null, { step: room.chaosStep, totalSteps: room.chaosTotalSteps });
+  setRoomStage(room, "answering");
+  setStageTimer(room, room.timers.answerSeconds, () => expireAnswering(room.code));
+  emitRoom(room);
+}
+
+function completeChaosStep(room) {
+  clearRoomTimer(room);
+  fillMissingAnswers(room);
+  safeArray(room.answers).forEach((answer) => {
+    const meta = room.assignmentMeta?.[answer.authorId];
+    const chain = safeArray(room.chaosChains).find((item) => item.id === meta?.chainId);
+    if (!chain) return;
+    chain.segments.push(segmentFromSubmission(answer, meta.step || room.chaosStep || 2, chain.id));
+  });
+
+  if ((room.chaosStep || 2) >= (room.chaosTotalSteps || 2)) {
+    startChaosReveal(room);
+    return;
+  }
+
+  room.chaosStep += 1;
+  startChaosWritingStep(room);
+}
+
+function chainStoryText(chain) {
+  return safeArray(chain.segments)
+    .map((segment, index) => `${index + 1}. ${segment.text || (segment.audio ? "[голосовой кусок]" : "...")}`)
+    .join("\n");
+}
+
+function startChaosReveal(room) {
+  clearRoomTimer(room);
+  const chains = safeArray(room.chaosChains).filter((chain) => safeArray(chain.segments).length);
+  if (!chains.length) {
+    finishGame(room);
+    return;
+  }
+
+  room.prompts = [];
+  room.answers = [];
+  room.assignments = {};
+  room.assignmentMeta = {};
+  room.votes = [];
+
+  chains.forEach((chain, index) => {
+    const segments = safeArray(chain.segments);
+    const first = segments[0];
+    const rest = segments.slice(1);
+    const prompt = {
+      id: first.id || makeId("prompt"),
+      round: room.round,
+      authorId: first.authorId || null,
+      text: first.text || "",
+      audio: first.audio || null,
+      chainId: chain.id,
+      versions: first.snapshot?.versions || []
+    };
+    const finalAuthor = rest.at(-1)?.authorId || first.authorId || null;
+    const answer = {
+      id: makeId("answer"),
+      round: room.round,
+      promptId: prompt.id,
+      authorId: finalAuthor,
+      text: rest.map((segment) => segment.text || (segment.audio ? "[голосовой кусок]" : "...")).join("\n"),
+      audio: rest.find((segment) => segment.audio)?.audio || null,
+      chainId: chain.id,
+      chainSegments: segments,
+      storyText: chainStoryText(chain),
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      submittedAtMs: 0,
+      versions: [{
+        version: 1,
+        text: chainStoryText(chain),
+        textLength: chainStoryText(chain).length,
+        audio: null,
+        audioMeta: null,
+        source: "chaos_chain",
+        createdAt: Date.now(),
+        elapsedMs: getStageElapsedMs(room),
+        change: { type: "chain_complete", editDistance: 0, changeRatio: 0, beforeLength: 0, afterLength: chainStoryText(chain).length, lengthDelta: chainStoryText(chain).length, audioAction: "none", audioDurationDelta: 0, audioSourceChanged: false }
+      }]
+    };
+    room.prompts.push(prompt);
+    room.answers.push(answer);
+  });
+
+  setRoomStage(room, "revealing");
+  room.timerEndsAt = null;
+  emitRoom(room);
+}
+
 
 function shuffleItems(items) {
   const result = [...safeArray(items)];
@@ -1192,6 +1450,26 @@ function shuffleItems(items) {
 
 function isSharedPromptMode(room) {
   return normalizeGameMode(room?.gameMode) === "shared_prompt";
+}
+
+function isChaosChainMode(room) {
+  return normalizeGameMode(room?.gameMode) === "chaos_chain";
+}
+
+function isStoryChainMode(room) {
+  return normalizeGameMode(room?.gameMode) === "story_chain";
+}
+
+function isGuessAuthorMode(room) {
+  return normalizeGameMode(room?.gameMode) === "guess_author";
+}
+
+function isDuelTournamentMode(room) {
+  return normalizeGameMode(room?.gameMode) === "duel_tournament";
+}
+
+function isChainStoryMode(room) {
+  return isChaosChainMode(room) || isStoryChainMode(room);
 }
 
 function makeAutoSharedPrompt(room, player = null, index = 0) {
@@ -1297,6 +1575,245 @@ function startSharedPromptRound(room) {
   emitRoom(room);
 }
 
+
+function getDuelBattle(room) {
+  return isDuelTournamentMode(room) ? room?.duel?.currentBattle : null;
+}
+
+function getDuelParticipantIds(room) {
+  return new Set(safeArray(getDuelBattle(room)?.participantIds));
+}
+
+function getDuelPromptAuthors(room) {
+  const participants = getDuelParticipantIds(room);
+  return getConnectedPlayers(room).filter((player) => !participants.has(player.id));
+}
+
+function getExpectedAnswerers(room) {
+  if (isDuelTournamentMode(room) && getDuelBattle(room)) {
+    const participants = getDuelParticipantIds(room);
+    return getConnectedPlayers(room).filter((player) => participants.has(player.id) && room.assignments[player.id]);
+  }
+  return getConnectedPlayers(room).filter((player) => !room.assignments || room.assignments[player.id]);
+}
+
+function getExpectedVoters(room) {
+  const players = getConnectedPlayers(room);
+  if (isDuelTournamentMode(room) && getDuelBattle(room)) {
+    const participants = getDuelParticipantIds(room);
+    const judges = players.filter((player) => !participants.has(player.id));
+    return judges.length ? judges : players;
+  }
+  return players.filter((player) => {
+    if (isChainStoryMode(room)) return true;
+    return !room.answers.every((answerItem) => answerItem.authorId === player.id);
+  });
+}
+
+function canVoteInCurrentRound(room, playerId) {
+  if (isDuelTournamentMode(room) && getDuelBattle(room)) {
+    const expected = getExpectedVoters(room).map((player) => player.id);
+    return expected.includes(playerId);
+  }
+  return true;
+}
+
+function duelStageName(count) {
+  if (count <= 3) return "Финал";
+  if (count <= 6) return "Полуфинал";
+  if (count <= 12) return "Отбор";
+  return "Турнир";
+}
+
+function makeDuelBattles(participantIds, stage) {
+  const ids = shuffleItems(participantIds);
+  const battles = [];
+  if (ids.length <= 3) {
+    battles.push({ id: makeId("battle"), stage, index: 0, type: ids.length === 3 ? "trio" : "duel", participantIds: ids, result: null });
+    return battles;
+  }
+  let cursor = 0;
+  if (ids.length % 2 === 1) {
+    battles.push({ id: makeId("battle"), stage, index: battles.length, type: "trio", participantIds: ids.slice(0, 3), result: null });
+    cursor = 3;
+  }
+  for (let index = cursor; index < ids.length; index += 2) {
+    battles.push({ id: makeId("battle"), stage, index: battles.length, type: "duel", participantIds: ids.slice(index, index + 2), result: null });
+  }
+  return battles;
+}
+
+function prepareDuelStage(room, participantIds) {
+  if (!room.duel) resetDuelData(room);
+  room.duel.stage += 1;
+  room.duel.stageParticipants = [...participantIds];
+  room.duel.stageName = duelStageName(participantIds.length);
+  room.duel.battles = makeDuelBattles(participantIds, room.duel.stage);
+  room.duel.currentBattleIndex = 0;
+  room.duel.currentBattle = null;
+  room.duel.stageWinners = [];
+}
+
+function duelBattleLabel(room, battle = getDuelBattle(room)) {
+  if (!battle) return "Дуэльный турнир";
+  const names = safeArray(battle.participantIds).map((id) => getPlayerName(room, id)).join(" vs ");
+  return `${room.duel?.stageName || "Бой"} · ${names}`;
+}
+
+function makeAutoDuelPrompt(room, battle = getDuelBattle(room)) {
+  const focusId = safeArray(battle?.participantIds)[0] || null;
+  const text = pickAutoPrompt(room.round + Date.now(), room, { playerId: focusId });
+  return {
+    id: makeId("prompt"),
+    round: room.round,
+    authorId: null,
+    text,
+    audio: null,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    submittedAtMs: 0,
+    versions: [{
+      version: 1,
+      text,
+      textLength: text.length,
+      audio: null,
+      audioMeta: null,
+      source: "auto",
+      createdAt: Date.now(),
+      elapsedMs: 0,
+      change: { type: "auto_fallback", editDistance: 0, changeRatio: 0, beforeLength: 0, afterLength: text.length, lengthDelta: text.length, audioAction: "none", audioDurationDelta: 0, audioSourceChanged: false }
+    }]
+  };
+}
+
+function startDuelTournament(room) {
+  resetRoundData(room);
+  resetChaosData(room);
+  resetDuelData(room);
+  room.round = 1;
+  room.maxRounds = 999;
+  room.duel.active = true;
+  const participantIds = getConnectedPlayers(room).map((player) => player.id);
+  prepareDuelStage(room, participantIds);
+  logEvent(room, "duel_tournament_start", null, { players: participantIds.length });
+  startCurrentDuelBattle(room);
+}
+
+function startCurrentDuelBattle(room) {
+  const battle = room.duel?.battles?.[room.duel.currentBattleIndex];
+  if (!battle) return completeDuelStage(room);
+  resetRoundData(room);
+  room.duel.currentBattle = battle;
+  room.round = safeArray(room.duel.completedBattles).length + 1;
+  const promptAuthors = getDuelPromptAuthors(room);
+  logEvent(room, "duel_battle_start", null, { battleId: battle.id, participantIds: battle.participantIds, promptAuthors: promptAuthors.map((player) => player.id) });
+
+  if (!promptAuthors.length || room.settings.promptMode === "auto") {
+    room.prompts = [makeAutoDuelPrompt(room, battle)];
+    startDuelAnswering(room);
+    return;
+  }
+
+  setRoomStage(room, "prompting");
+  setStageTimer(room, room.timers.promptSeconds, () => expirePrompting(room.code));
+  emitRoom(room);
+}
+
+function startDuelAnswering(room) {
+  clearRoomTimer(room);
+  const battle = getDuelBattle(room);
+  if (!battle) return completeDuelStage(room);
+  const participantIds = new Set(battle.participantIds);
+  const promptAuthors = getDuelPromptAuthors(room);
+  const submittedAuthors = new Set(room.prompts.map((prompt) => prompt.authorId).filter(Boolean));
+  promptAuthors.forEach((player) => {
+    if (!submittedAuthors.has(player.id)) {
+      incrementPlayerStat(room, player.id, "missedPrompts");
+      logEvent(room, "miss_duel_prompt", player.id, { battleId: battle.id });
+    }
+  });
+
+  let candidates = safeArray(room.prompts).filter((prompt) => !prompt.authorId || !participantIds.has(prompt.authorId));
+  if (!candidates.length) candidates = [makeAutoDuelPrompt(room, battle)];
+  const selected = randomItem(candidates);
+  room.prompts = [{ ...selected, round: room.round, id: selected.id || makeId("prompt") }];
+  const promptId = room.prompts[0].id;
+  room.assignments = {};
+  room.assignmentMeta = {};
+  battle.participantIds.forEach((playerId) => {
+    room.assignments[playerId] = promptId;
+    room.assignmentMeta[playerId] = { duel: true, battleId: battle.id, participantIds: battle.participantIds };
+  });
+  if (selected.authorId) incrementPlayerStat(room, selected.authorId, "duelPromptsSelected");
+  logEvent(room, "duel_battle_prompt_selected", selected.authorId || null, { battleId: battle.id, promptId });
+  setRoomStage(room, "answering");
+  setStageTimer(room, room.timers.answerSeconds, () => expireAnswering(room.code));
+  emitRoom(room);
+}
+
+function settleDuelBattle(room) {
+  const battle = getDuelBattle(room);
+  if (!isDuelTournamentMode(room) || !battle || battle.result) return;
+  const participantIds = new Set(battle.participantIds);
+  const participantResults = safeArray(room.lastRoundResults).filter((result) => participantIds.has(result.answerAuthorId));
+  let winnerResult = participantResults[0] || null;
+  let tiedResults = [];
+  if (winnerResult) {
+    const bestVotes = winnerResult.votesCount || 0;
+    tiedResults = participantResults.filter((result) => (result.votesCount || 0) === bestVotes);
+    if (tiedResults.length > 1) {
+      const bestScore = Math.max(...tiedResults.map((result) => getPlayer(room, result.answerAuthorId)?.score || 0));
+      const scoreTied = tiedResults.filter((result) => (getPlayer(room, result.answerAuthorId)?.score || 0) === bestScore);
+      winnerResult = randomItem(scoreTied);
+    }
+  }
+  const winnerId = winnerResult?.answerAuthorId || battle.participantIds[0];
+  const winner = getPlayer(room, winnerId);
+  battle.result = {
+    winnerId,
+    winnerName: winner?.name || getPlayerName(room, winnerId),
+    answerId: winnerResult?.answerId || null,
+    votesCount: winnerResult?.votesCount || 0,
+    tieResolved: tiedResults.length > 1,
+    tiedPlayerIds: tiedResults.map((result) => result.answerAuthorId)
+  };
+  room.duel.stageWinners.push(winnerId);
+  room.duel.completedBattles.push({ ...battle, result: battle.result });
+  incrementPlayerStat(room, winnerId, "duelWins");
+  if (room.duel.stageName === "Финал") incrementPlayerStat(room, winnerId, "duelFinalWins");
+  logEvent(room, "duel_battle_finished", winnerId, { battleId: battle.id, result: battle.result });
+}
+
+function completeDuelStage(room) {
+  const winners = [...new Set(safeArray(room.duel?.stageWinners))];
+  if (winners.length <= 1) {
+    room.duel.complete = true;
+    room.duel.championId = winners[0] || room.duel.completedBattles.at(-1)?.result?.winnerId || null;
+    if (room.duel.championId) incrementPlayerStat(room, room.duel.championId, "duelChampion");
+    logEvent(room, "duel_tournament_finished", room.duel.championId, { championId: room.duel.championId });
+    if (safeArray(room.bestJokesHistory).length >= 2) startGrandVoting(room);
+    else finishGame(room);
+    return;
+  }
+  prepareDuelStage(room, winners);
+  startCurrentDuelBattle(room);
+}
+
+function advanceDuelAfterScoreboard(room) {
+  settleDuelBattle(room);
+  if (!room.duel || room.duel.complete) {
+    if (safeArray(room.bestJokesHistory).length >= 2) startGrandVoting(room);
+    else finishGame(room);
+    return;
+  }
+  room.duel.currentBattleIndex += 1;
+  if (room.duel.currentBattleIndex < room.duel.battles.length) {
+    startCurrentDuelBattle(room);
+  } else {
+    completeDuelStage(room);
+  }
+}
+
 function startRound(room) {
   if (isSharedPromptMode(room) && room.sharedPromptCollectionComplete) {
     startSharedPromptRound(room);
@@ -1325,7 +1842,11 @@ function startGameCountdown(room) {
   room.timerHandle = setTimeout(() => {
     const latest = rooms[room.code];
     if (!latest || latest.state !== "starting") return;
-    if (isSharedPromptMode(latest)) {
+    if (isDuelTournamentMode(latest)) {
+      startDuelTournament(latest);
+    } else if (isChainStoryMode(latest)) {
+      startChaosOpening(latest);
+    } else if (isSharedPromptMode(latest)) {
       if (latest.settings.promptMode === "auto") {
         latest.sharedPromptQueue = buildAutoSharedPromptQueue(latest);
         latest.maxRounds = latest.sharedPromptQueue.length;
@@ -1445,6 +1966,14 @@ function fillMissingPrompts(room) {
 
 function moveToAnswering(room) {
   clearRoomTimer(room);
+  if (isDuelTournamentMode(room)) {
+    startDuelAnswering(room);
+    return;
+  }
+  if (isChainStoryMode(room)) {
+    startChaosFromPrompts(room);
+    return;
+  }
   fillMissingPrompts(room);
   buildAssignments(room);
   setRoomStage(room, "answering");
@@ -1487,9 +2016,75 @@ function fillMissingAnswers(room) {
   });
 }
 
+function startGuessing(room) {
+  room.guesses = [];
+  room.guessResults = [];
+  setRoomStage(room, "guessing");
+  setStageTimer(room, room.timers.voteSeconds || 30, () => expireGuessing(room.code));
+  emitRoom(room);
+}
+
+function normalizeGuessValue(value) {
+  const clean = cleanSessionId(value);
+  return clean || null;
+}
+
+function finishGuessing(room) {
+  clearRoomTimer(room);
+  const promptsById = new Map(safeArray(room.prompts).map((prompt) => [prompt.id, prompt]));
+  const results = [];
+  safeArray(room.guesses).forEach((entry) => {
+    safeArray(entry.guesses).forEach((guess) => {
+      const answer = safeArray(room.answers).find((item) => item.id === guess.answerId);
+      if (!answer) return;
+      const prompt = promptsById.get(answer.promptId);
+      const correctPrompt = Boolean(prompt?.authorId && guess.promptAuthorId === prompt.authorId);
+      const correctAnswer = Boolean(answer.authorId && guess.answerAuthorId === answer.authorId);
+      const fullCorrect = correctPrompt && correctAnswer;
+      const result = {
+        round: room.round,
+        answerId: answer.id,
+        promptId: answer.promptId,
+        guesserId: entry.playerId,
+        promptAuthorId: prompt?.authorId || null,
+        answerAuthorId: answer.authorId || null,
+        guessedPromptAuthorId: guess.promptAuthorId || null,
+        guessedAnswerAuthorId: guess.answerAuthorId || null,
+        correctPrompt,
+        correctAnswer,
+        fullCorrect,
+        createdAt: entry.createdAt || Date.now()
+      };
+      results.push(result);
+      if (correctPrompt) incrementPlayerStat(room, entry.playerId, "correctPromptGuesses");
+      if (correctAnswer) incrementPlayerStat(room, entry.playerId, "correctAnswerGuesses");
+      if (fullCorrect) incrementPlayerStat(room, entry.playerId, "fullPairGuesses");
+    });
+  });
+  room.guessResults = results;
+  if (!Array.isArray(room.guessArchive)) room.guessArchive = [];
+  room.guessArchive.push(...results);
+  logEvent(room, "finish_guessing", null, { results: results.length });
+  moveToVoting(room);
+}
+
+function expireGuessing(code) {
+  const room = rooms[code];
+  if (!room || room.state !== "guessing") return;
+  finishGuessing(room);
+}
+
 function moveToRevealing(room) {
   clearRoomTimer(room);
+  if (isChainStoryMode(room) && room.chaosActive) {
+    completeChaosStep(room);
+    return;
+  }
   fillMissingAnswers(room);
+  if (isGuessAuthorMode(room)) {
+    startGuessing(room);
+    return;
+  }
   setRoomStage(room, "revealing");
   room.timerEndsAt = null;
   emitRoom(room);
@@ -1533,9 +2128,8 @@ function finishVoting(room) {
   clearRoomTimer(room);
 
   const voters = new Set(room.votes.map((vote) => vote.voterId));
-  getConnectedPlayers(room).forEach((player) => {
-    const ownOnly = room.answers.every((answerItem) => answerItem.authorId === player.id);
-    if (!ownOnly && !voters.has(player.id)) {
+  getExpectedVoters(room).forEach((player) => {
+    if (!voters.has(player.id)) {
       incrementPlayerStat(room, player.id, "missedVotes");
       logEvent(room, "miss_vote", player.id, {});
     }
@@ -1552,7 +2146,16 @@ function finishVoting(room) {
     const author = room.players.find((player) => player.id === answer.authorId);
     const prompt = room.prompts.find((item) => item.id === answer.promptId);
 
-    if (author) {
+    if (isChainStoryMode(room) && answer.chainSegments?.length) {
+      const authors = [...new Set(answer.chainSegments.map((segment) => segment.authorId).filter(Boolean))];
+      authors.forEach((authorId) => {
+        const chainAuthor = room.players.find((player) => player.id === authorId);
+        if (!chainAuthor) return;
+        chainAuthor.score += votesCount;
+        chainAuthor.totalVotesReceived += votesCount;
+        chainAuthor.bestSingleRoundVotes = Math.max(chainAuthor.bestSingleRoundVotes, votesCount);
+      });
+    } else if (author) {
       author.score += votesCount;
       author.totalVotesReceived += votesCount;
       author.bestSingleRoundVotes = Math.max(author.bestSingleRoundVotes, votesCount);
@@ -1577,6 +2180,8 @@ function finishVoting(room) {
       voters: room.votes.filter((vote) => vote.answerId === answer.id).map((vote) => vote.voterId),
       promptSnapshot: prompt ? snapshotSubmission(prompt) : null,
       answerSnapshot: snapshotSubmission(answer),
+      chainSegments: answer.chainSegments || null,
+      storyText: answer.storyText || null,
       isRoundWinner: false
     };
   }).sort((a, b) => b.votesCount - a.votesCount);
@@ -1595,6 +2200,8 @@ function finishVoting(room) {
     answerIds: bestJokes.map((result) => result.answerId)
   } : null;
 
+  if (isDuelTournamentMode(room)) settleDuelBattle(room);
+
   bestJokes.forEach((best) => {
     room.bestJokesHistory.push({
       jokeId: best.jokeId,
@@ -1605,6 +2212,8 @@ function finishVoting(room) {
       answerText: best.answerText,
       promptAudio: best.promptAudio || null,
       answerAudio: best.answerAudio || null,
+      chainSegments: best.chainSegments || null,
+      storyText: best.storyText || null,
       promptAuthorId: best.promptAuthorId,
       promptAuthorName: best.promptAuthorName,
       answerAuthorId: best.answerAuthorId,
@@ -1667,6 +2276,17 @@ function buildPlayerStats(room) {
       return joke && (joke.answerAuthorId === player.id || joke.promptAuthorId === player.id);
     }).length;
     const votesForWinners = safeArray(room.grandFinal?.votes).filter((vote) => vote.voterId === player.id && safeArray(room.grandFinal?.winners).some((winner) => winner.jokeId === vote.jokeId)).length;
+    const guessArchive = safeArray(room.guessArchive);
+    const playerGuessResults = guessArchive.filter((guess) => guess.guesserId === player.id);
+    const correctPromptGuesses = playerGuessResults.filter((guess) => guess.correctPrompt).length;
+    const correctAnswerGuesses = playerGuessResults.filter((guess) => guess.correctAnswer).length;
+    const fullPairGuesses = playerGuessResults.filter((guess) => guess.fullCorrect).length;
+    const authoredGuessTargets = guessArchive.filter((guess) => guess.promptAuthorId === player.id || guess.answerAuthorId === player.id);
+    const correctlyGuessedAsAuthor = authoredGuessTargets.filter((guess) => (guess.promptAuthorId === player.id && guess.correctPrompt) || (guess.answerAuthorId === player.id && guess.correctAnswer)).length;
+    const wronglyAccused = guessArchive.filter((guess) => {
+      return (guess.guessedPromptAuthorId === player.id && guess.promptAuthorId !== player.id) ||
+        (guess.guessedAnswerAuthorId === player.id && guess.answerAuthorId !== player.id);
+    }).length;
 
     return {
       id: player.id,
@@ -1697,6 +2317,16 @@ function buildPlayerStats(room) {
       grandWins,
       finalVotesForOwnJokes,
       votesForWinners,
+      correctPromptGuesses,
+      correctAnswerGuesses,
+      fullPairGuesses,
+      correctlyGuessedAsAuthor,
+      authoredGuessTargets: authoredGuessTargets.length,
+      wronglyAccused,
+      duelWins: Number(player.stats?.duelWins) || 0,
+      duelFinalWins: Number(player.stats?.duelFinalWins) || 0,
+      duelChampion: Number(player.stats?.duelChampion) || 0,
+      duelPromptsSelected: Number(player.stats?.duelPromptsSelected) || 0,
       missedPrompts,
       missedAnswers,
       missedVotes,
@@ -1713,10 +2343,22 @@ function selectPersonalTitle(stat, allStats, place, topScore) {
   const maxUploaded = Math.max(...allStats.map((item) => item.uploadedAudioCount), 0);
   const maxEdits = Math.max(...allStats.map((item) => item.editsCount), 0);
   const maxMissed = Math.max(...allStats.map((item) => item.missedPrompts + item.missedAnswers + item.missedVotes), 0);
+  const maxFullPairGuesses = Math.max(...allStats.map((item) => item.fullPairGuesses || 0), 0);
+  const maxCorrectGuesses = Math.max(...allStats.map((item) => (item.correctPromptGuesses || 0) + (item.correctAnswerGuesses || 0)), 0);
+  const maxWronglyAccused = Math.max(...allStats.map((item) => item.wronglyAccused || 0), 0);
   const missed = stat.missedPrompts + stat.missedAnswers + stat.missedVotes;
   const candidates = [];
   const add = (score, title) => candidates.push({ score, title });
 
+  if ((stat.duelChampion || 0) > 0) add(130, titleObject("duel_champion", "Чемпион сетки", "winner", "Прошёл турнирную сетку и остался последним в бою.", "legendary"));
+  if ((stat.duelFinalWins || 0) > 0) add(118, titleObject("final_puncher", "Финальный панчер", "winner", "Забрал решающий бой турнира.", "epic"));
+  if ((stat.duelWins || 0) >= 2) add(104, titleObject("battle_grinder", "Прошёл через мясорубку", "winner", "Выиграл несколько боёв подряд и дожил до поздней стадии.", "epic"));
+  if ((stat.duelPromptsSelected || 0) >= 1) add(86, titleObject("duel_writer", "Дуэльный сценарист", "creator", "Его начало выбрали для чужого боя.", "rare"));
+
+  if ((stat.fullPairGuesses || 0) > 0 && stat.fullPairGuesses === maxFullPairGuesses) add(119, titleObject("pair_detective", "Раскрыл связку", "detective", "Лучше всех угадывал, кто дал начало и кто добил шутку.", "legendary"));
+  if (((stat.correctPromptGuesses || 0) + (stat.correctAnswerGuesses || 0)) > 0 && ((stat.correctPromptGuesses || 0) + (stat.correctAnswerGuesses || 0)) === maxCorrectGuesses) add(107, titleObject("author_detective", "Следователь", "detective", "Чаще остальных узнавал авторов по стилю и подаче.", "epic"));
+  if ((stat.authoredGuessTargets || 0) >= 2 && (stat.correctlyGuessedAsAuthor || 0) === 0) add(101, titleObject("perfect_mask", "Идеальная маска", "mask", "Писал так, что комнатe было сложно понять, где его стиль.", "epic"));
+  if ((stat.wronglyAccused || 0) > 0 && stat.wronglyAccused === maxWronglyAccused) add(83, titleObject("false_trace", "Ложный след", "detective", "Его часто подозревали в чужих шутках.", "rare"));
   if (stat.grandWins > 0) add(125, titleObject("joke_of_the_night", "Шутка вечера", "winner", "Стал соавтором шутки, которую выбрали уже после всех раундов.", "legendary"));
   if (place === 1 && stat.score === topScore && allStats.filter((item) => item.score === topScore).length > 1) add(112, titleObject("shared_crown", "Двойная корона", "winner", "Разделил первое место — комната не смогла выбрать одного главного.", "legendary"));
   if (place === 1 && stat.score === maxScore) add(105, titleObject("punchline_king", "Король панчлайна", "winner", "Чаще всех забирал голоса и стабильно попадал в настроение комнаты.", "legendary"));
@@ -2082,6 +2724,11 @@ io.on("connection", (socket) => {
       sharedPromptQueue: [],
       currentSharedPromptIndex: 0,
       sharedPromptCollectionComplete: false,
+      chaosChains: [],
+      chaosStep: 1,
+      chaosTotalSteps: 0,
+      chaosActive: false,
+      duel: { active: false, stage: 0, stageName: "", stageParticipants: [], battles: [], currentBattleIndex: 0, currentBattle: null, stageWinners: [], completedBattles: [], championId: null, complete: false },
       prompts: [],
       sharedPrompt: null,
       assignments: {},
@@ -2089,6 +2736,9 @@ io.on("connection", (socket) => {
       assignmentHistory: {},
       answers: [],
       votes: [],
+      guesses: [],
+      guessResults: [],
+      guessArchive: [],
       lastRoundResults: [],
       lastBestJoke: null,
       lastBestJokes: [],
@@ -2255,6 +2905,9 @@ io.on("connection", (socket) => {
     });
     room.bestJokesHistory = [];
     room.jokeArchive = [];
+    room.guesses = [];
+    room.guessResults = [];
+    room.guessArchive = [];
     room.sharedPromptQueue = [];
     room.currentSharedPromptIndex = 0;
     room.sharedPromptCollectionComplete = false;
@@ -2263,6 +2916,8 @@ io.on("connection", (socket) => {
     room.grandFinal = null;
     room.finalSummary = null;
     room.titles = [];
+    resetChaosData(room);
+    resetDuelData(room);
     logEvent(room, "start_game", socket.data.playerId, {});
     startGameCountdown(room);
     emitOpenRooms();
@@ -2272,6 +2927,9 @@ io.on("connection", (socket) => {
     const room = rooms[socket.data.roomCode];
     const playerId = socket.data.playerId;
     if (!room || !["prompting", "collectingSharedPrompts"].includes(room.state)) return;
+    if (isDuelTournamentMode(room) && room.state === "prompting" && !getDuelPromptAuthors(room).some((player) => player.id === playerId)) {
+      return emitError(socket, "В этом бою начало пишут только игроки вне дуэли.");
+    }
 
     const isSharedCollection = room.state === "collectingSharedPrompts";
     const promptText = cleanText(text, PROMPT_MAX_LENGTH);
@@ -2309,7 +2967,8 @@ io.on("connection", (socket) => {
     applySubmissionStats(room, playerId, version, "prompt", false);
     logEvent(room, isSharedCollection ? "submit_shared_prompt" : "submit_prompt", playerId, { promptId: prompt.id, version: 1, textLength: promptText.length, audio: version.audioMeta });
 
-    if (getConnectedPlayers(room).every((player) => room.prompts.some((prompt) => prompt.authorId === player.id))) {
+    const expectedPromptAuthors = isSharedCollection ? getConnectedPlayers(room) : getExpectedPromptAuthors(room);
+    if (expectedPromptAuthors.every((player) => room.prompts.some((prompt) => prompt.authorId === player.id))) {
       if (isSharedCollection) finalizeSharedPromptCollection(room);
       else moveToAnswering(room);
     } else {
@@ -2359,8 +3018,33 @@ io.on("connection", (socket) => {
     applySubmissionStats(room, playerId, version, "answer", false);
     logEvent(room, "submit_answer", playerId, { answerId: answer.id, promptId: answer.promptId, version: 1, textLength: answerText.length, audio: version.audioMeta });
 
-    if (getConnectedPlayers(room).every((player) => room.answers.some((answer) => answer.authorId === player.id))) {
+    if (getExpectedAnswerers(room).every((player) => room.answers.some((answer) => answer.authorId === player.id))) {
       moveToRevealing(room);
+    } else {
+      emitRoom(room);
+    }
+  });
+
+  socket.on("submitGuesses", ({ guesses } = {}) => {
+    const room = rooms[socket.data.roomCode];
+    const playerId = socket.data.playerId;
+    if (!room || room.state !== "guessing" || !playerId) return;
+    if (room.guesses.some((entry) => entry.playerId === playerId)) return;
+
+    const cleanGuesses = safeArray(guesses).map((guess) => ({
+      answerId: cleanText(guess?.answerId, 80),
+      promptAuthorId: normalizeGuessValue(guess?.promptAuthorId),
+      answerAuthorId: normalizeGuessValue(guess?.answerAuthorId)
+    })).filter((guess) => {
+      return guess.answerId && room.answers.some((answer) => answer.id === guess.answerId);
+    });
+
+    if (!cleanGuesses.length) return emitError(socket, "Выберите авторов хотя бы для одной шутки.");
+    room.guesses.push({ playerId, guesses: cleanGuesses, createdAt: Date.now(), elapsedMs: getStageElapsedMs(room) });
+    logEvent(room, "submit_guess", playerId, { guesses: cleanGuesses.length });
+
+    if (getConnectedPlayers(room).every((player) => room.guesses.some((entry) => entry.playerId === player.id))) {
+      finishGuessing(room);
     } else {
       emitRoom(room);
     }
@@ -2381,16 +3065,14 @@ io.on("connection", (socket) => {
 
     const answer = room.answers.find((item) => item.id === answerId);
     if (!answer) return emitError(socket, COPY.errors.jokeMissing);
-    if (answer.authorId === playerId) return emitError(socket, COPY.errors.selfVote);
+    if (!canVoteInCurrentRound(room, playerId)) return emitError(socket, "В этом бою голосуют судьи вне дуэли.");
+    if (!isChainStoryMode(room) && answer.authorId === playerId) return emitError(socket, COPY.errors.selfVote);
 
     room.votes.push({ voterId: playerId, answerId, createdAt: Date.now(), elapsedMs: getStageElapsedMs(room) });
     incrementPlayerStat(room, playerId, "votesGiven");
     logEvent(room, "vote_round", playerId, { answerId });
 
-    if (getConnectedPlayers(room).every((player) => {
-      const ownOnly = room.answers.every((answerItem) => answerItem.authorId === player.id);
-      return ownOnly || room.votes.some((vote) => vote.voterId === player.id);
-    })) {
+    if (getExpectedVoters(room).every((player) => room.votes.some((vote) => vote.voterId === player.id))) {
       finishVoting(room);
     } else {
       emitRoom(room);
@@ -2401,6 +3083,11 @@ io.on("connection", (socket) => {
     const room = rooms[socket.data.roomCode];
     if (!ensureHost(socket, room)) return;
     if (room.state !== "scoreboard") return;
+
+    if (isDuelTournamentMode(room)) {
+      advanceDuelAfterScoreboard(room);
+      return;
+    }
 
     if (room.round >= room.maxRounds) {
       startGrandVoting(room);
@@ -2574,6 +3261,9 @@ io.on("connection", (socket) => {
     resetRoundData(room);
     room.bestJokesHistory = [];
     room.jokeArchive = [];
+    room.guesses = [];
+    room.guessResults = [];
+    room.guessArchive = [];
     room.sharedPromptQueue = [];
     room.currentSharedPromptIndex = 0;
     room.sharedPromptCollectionComplete = false;
@@ -2582,6 +3272,7 @@ io.on("connection", (socket) => {
     room.grandFinal = null;
     room.finalSummary = null;
     room.titles = [];
+    resetChaosData(room);
     emitRoom(room);
     emitOpenRooms();
   });

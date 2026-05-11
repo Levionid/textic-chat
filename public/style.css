@@ -5973,3 +5973,174 @@ body.create-screen .game-card.create-game-card {
     letter-spacing: 0.12em;
   }
 }
+
+/* Patch 33: Chaos Chain story cards */
+.chain-joke-card {
+  gap: 14px;
+}
+
+.chain-story-list {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+}
+
+.chain-story-piece {
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.chain-story-piece:first-child {
+  border-color: rgba(255, 209, 102, 0.34);
+  background: rgba(255, 209, 102, 0.075);
+}
+
+.chain-story-text {
+  margin-top: 5px;
+  color: var(--text);
+  font-size: clamp(16px, 2vw, 20px);
+  font-weight: 820;
+  line-height: 1.42;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: pre-line;
+}
+
+.chain-piece-label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.chain-joke-card .voice-message {
+  margin-top: 10px;
+}
+
+/* Patch 35: Guess Author mode */
+.guess-stage .stage-message {
+  max-width: 860px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.guess-jokes .joke-actions {
+  width: 100%;
+}
+
+.guess-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  width: 100%;
+  margin-top: 12px;
+}
+
+.guess-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: var(--muted);
+  font-weight: 900;
+  font-size: 13px;
+}
+
+.guess-select {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 18px;
+  padding: 14px 16px;
+  background: rgba(9, 10, 16, 0.72);
+  color: var(--text);
+  font: inherit;
+  font-weight: 900;
+  outline: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.guess-select:focus {
+  border-color: rgba(255, 199, 102, 0.62);
+  box-shadow: 0 0 0 4px rgba(255, 199, 102, 0.10);
+}
+
+@media (max-width: 720px) {
+  .guess-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Patch 36: Textic Chat polish, mobile lobby code centering, settings modal gap fix */
+.decor-sticker,
+.decor-bubble {
+  display: none !important;
+}
+
+@media (max-width: 720px) {
+  .invite-code-block {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    text-align: center !important;
+  }
+
+  .invite-code-block .room-code.secret-toggle,
+  .invite-code-block .room-code.secret-toggle.is-secret-hidden {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    text-align: center !important;
+    line-height: 1 !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+  }
+
+  .invite-code-block .meta {
+    text-align: center !important;
+    max-width: 320px;
+  }
+}
+
+.settings-modal {
+  padding: 0 !important;
+  overflow-y: auto !important;
+}
+
+.settings-modal-head {
+  margin: 0 !important;
+  padding: 20px 22px 16px !important;
+  min-height: auto !important;
+}
+
+.settings-modal .settings-editor {
+  padding: 18px 22px 22px !important;
+}
+
+@media (max-width: 720px) {
+  .settings-modal-head {
+    margin: 0 !important;
+    padding: 18px 18px 14px !important;
+  }
+
+  .settings-modal .settings-editor {
+    padding: 16px 18px 22px !important;
+  }
+}
+
+.duel-battle-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 206, 84, 0.28);
+  background: rgba(255, 206, 84, 0.10);
+  color: #ffe3a6;
+  font-weight: 900;
+}
