@@ -5854,3 +5854,54 @@ body.create-screen .game-card.create-game-card {
     min-height: auto;
   }
 }
+
+/* Patch 30: hide lobby code / QR on click */
+.room-code.secret-toggle,
+.qr-card.secret-toggle {
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.room-code.secret-toggle {
+  font: inherit;
+  justify-content: center;
+  user-select: none;
+}
+
+.room-code.secret-toggle.is-secret-hidden {
+  letter-spacing: 0.18em;
+  color: rgba(247, 241, 232, 0.72);
+  background:
+    linear-gradient(135deg, rgba(255, 209, 102, 0.10), rgba(156, 107, 255, 0.10)),
+    #101017;
+}
+
+.invite-url.is-secret-hidden {
+  color: rgba(247, 241, 232, 0.55);
+  font-style: italic;
+  letter-spacing: 0.02em;
+}
+
+.qr-card.secret-toggle {
+  width: 100%;
+  color: inherit;
+  font: inherit;
+}
+
+.qr-card.secret-toggle.is-secret-hidden .qr-image {
+  filter: blur(10px) saturate(0.65) brightness(0.85);
+  transform: scale(0.985);
+}
+
+.qr-card.secret-toggle.is-secret-hidden .qr-url {
+  color: rgba(247, 241, 232, 0.55);
+  font-style: italic;
+}
+
+.qr-card.secret-toggle:focus-visible,
+.room-code.secret-toggle:focus-visible {
+  outline: 3px solid rgba(255, 209, 102, 0.36);
+  outline-offset: 4px;
+}

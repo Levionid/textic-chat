@@ -369,6 +369,7 @@ let activeRecording = null;
 let recordingTicker = null;
 let historyOpen = false;
 let serverTimeOffset = 0;
+let lobbySecretHidden = false;
 
 function screenFromPath(pathname) {
   if (pathname === ROUTES.home) return "home";
@@ -429,17 +430,31 @@ function qrUrl(value, size = 220) {
   return `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&margin=10&data=${encodeURIComponent(value)}`;
 }
 
+function lobbyMaskedCode(code = "") {
+  const length = Math.max(4, String(code || "").length || 4);
+  return "•".repeat(length);
+}
+
+function lobbyCodeHtml(code, className = "") {
+  const display = lobbySecretHidden ? lobbyMaskedCode(code) : escapeHtml(code);
+  return `<button class="room-code secret-toggle ${className} ${lobbySecretHidden ? "is-secret-hidden" : ""}" data-action="toggle-lobby-secret" type="button" title="Скрыть/показать код и QR">${display}</button>`;
+}
+
+function inviteUrlHtml(value) {
+  return `<div class="invite-url ${lobbySecretHidden ? "is-secret-hidden" : ""}">${lobbySecretHidden ? "ссылка скрыта на экране" : escapeHtml(value)}</div>`;
+}
+
 function qrImageHtml(value, label = "QR для входа") {
   const safeValue = escapeHtml(value);
   return `
-    <div class="qr-card">
+    <button class="qr-card secret-toggle ${lobbySecretHidden ? "is-secret-hidden" : ""}" data-action="toggle-lobby-secret" type="button" title="Скрыть/показать код и QR">
       <img class="qr-image" src="${qrUrl(value)}" alt="${escapeHtml(label)}" loading="lazy">
       <div>
         <span class="bento-kicker">${escapeHtml(label)}</span>
         <p class="meta">Наведи камеру телефона — ссылка откроет лобби.</p>
-        <div class="qr-url">${safeValue}</div>
+        <div class="qr-url">${lobbySecretHidden ? "QR скрыт на экране" : safeValue}</div>
       </div>
-    </div>
+    </button>
   `;
 }
 
@@ -2003,7 +2018,7 @@ function renderWaiting() {
       <section class="invite-panel">
         <div class="invite-code-block">
           <span class="bento-kicker">Код лобби</span>
-          <span class="room-code">${currentRoom.code}</span>
+          ${lobbyCodeHtml(currentRoom.code)}
           <p class="meta">Друг может войти по коду или по ссылке.</p>
         </div>
         <div class="invite-link-block">
@@ -2011,7 +2026,7 @@ function renderWaiting() {
             <span class="bento-kicker">Ссылка для друзей</span>
             <span class="lobby-count">${onlineCount}/${currentRoom.settings.maxPlayers}</span>
           </div>
-          <div class="invite-url">${escapeHtml(link)}</div>
+          ${inviteUrlHtml(link)}
           <div class="actions invite-actions">
             <button class="btn primary compact-btn" data-action="copy-invite-link">${COPY.buttons.copyInvite}</button>
             <button class="btn ghost compact-btn" data-action="share-invite-link">${COPY.buttons.shareInvite}</button>
@@ -3013,6 +3028,12 @@ document.addEventListener("click", (event) => {
     render();
   }
 
+  if (action === "toggle-lobby-secret") {
+    lobbySecretHidden = !lobbySecretHidden;
+    render();
+    return;
+  }
+
   if (action === "spectator-reaction") {
     socket.emit("spectatorReaction", { emoji: button.dataset.emoji });
   }
@@ -3354,6 +3375,7 @@ socket.on("connect", () => {
 socket.on("roomCreated", ({ code, sessionId: nextSessionId }) => {
   lobbySettingsOpen = false;
   viewerMode = false;
+  lobbySecretHidden = false;
   rememberSession(code, nextSessionId);
   playSound("join");
   setRoute(`/lobby/${code}`);
@@ -3362,6 +3384,7 @@ socket.on("roomCreated", ({ code, sessionId: nextSessionId }) => {
 
 socket.on("joinedSpectator", ({ code, sessionId: nextSessionId }) => {
   viewerMode = true;
+  lobbySecretHidden = false;
   rememberSession(code, nextSessionId);
   setRoute(`/watch/${code}`, { replace: true });
   showToast(COPY.messages.spectatorJoined);
@@ -3370,6 +3393,7 @@ socket.on("joinedSpectator", ({ code, sessionId: nextSessionId }) => {
 socket.on("joinedRoom", ({ code, sessionId: nextSessionId, reconnected }) => {
   lobbySettingsOpen = false;
   viewerMode = false;
+  lobbySecretHidden = false;
   rememberSession(code, nextSessionId);
   playSound("join");
   setRoute(`/lobby/${code}`, { replace: currentScreen === "invite" });
@@ -3378,6 +3402,7 @@ socket.on("joinedRoom", ({ code, sessionId: nextSessionId, reconnected }) => {
 
 socket.on("rejoinedRoom", ({ code, sessionId: nextSessionId }) => {
   viewerMode = false;
+  lobbySecretHidden = false;
   rememberSession(code, nextSessionId);
   playSound("join");
   showToast(COPY.messages.returned(code));
