@@ -5512,3 +5512,45 @@ body.waiting-screen.has-room-controls .app {
     min-height: auto !important;
   }
 }
+
+/* === Patch 25: force create page desktop scrolling === */
+html:has(body.create-screen),
+body.simple-screen.create-screen,
+body.simple-screen.create-screen:not(.has-room-controls),
+body.create-screen:not(.has-room-controls) {
+  min-height: 100%;
+  height: auto !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+
+body.simple-screen.create-screen .app,
+body.create-screen:not(.has-room-controls) .app {
+  min-height: auto !important;
+  height: auto !important;
+  display: block !important;
+  align-content: start !important;
+  justify-items: initial !important;
+  padding-top: clamp(28px, 4vh, 54px) !important;
+  padding-bottom: max(96px, calc(96px + var(--safe-bottom, 0px))) !important;
+}
+
+body.simple-screen.create-screen .game-card.create-game-card,
+body.create-screen .game-card.create-game-card {
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+}
+
+/* On desktop the create form must own the vertical space, not the simple-screen centering layout. */
+@media (min-width: 721px) {
+  body.simple-screen.create-screen,
+  body.simple-screen.create-screen:not(.has-room-controls),
+  body.create-screen:not(.has-room-controls) {
+    overflow-y: scroll !important;
+  }
+
+  body.simple-screen.create-screen .app,
+  body.create-screen .app {
+    width: min(940px, calc(100% - 28px)) !important;
+  }
+}
