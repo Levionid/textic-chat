@@ -170,7 +170,9 @@ const COPY = {
     promptMixed: "Игроки + готовые начала",
     promptPack: "Пак готовых начал с никами",
     customPacks: "Свои паки начал",
+    customPacksClosedHint: "Создать или изменить свой пак",
     customPacksHint: "До 2 паков на этом устройстве. Каждое начало — с новой строки. {{player}} — случайный игрок, {{player2}} и {{player3}} — второй/третий разные игроки для шаблонов с несколькими никами, {{host}} — хост, {{me}} — автор автоначала.",
+    packCustomOnly: "Только свой пак",
     packMixed: "Микс под компанию",
     packUniversal: "Универсальные",
     packFriends: "Для друзей",
@@ -234,6 +236,7 @@ const COPY = {
     customPackSaved: "Пак сохранён.",
     customPackDeleted: "Пак удалён.",
     customPackEmpty: "Добавь название и хотя бы одно начало.",
+    customPackRequired: "Для режима «Только свой пак» создай хотя бы один свой пак или выбери другой пак.",
     recordingStarted: "Запись началась. Максимум 1 минута.",
     recordingLimit: "Запись остановлена: максимум 1 минута.",
     micDenied: "Не получилось включить микрофон. Проверьте разрешения браузера.",
@@ -538,23 +541,28 @@ function customPromptPacksHtml() {
 
   const createDisabled = packs.length >= CUSTOM_PROMPT_PACK_LIMIT;
   return `
-    <section class="custom-packs-panel">
-      <div class="custom-packs-title">
-        <div>
-          <h3>${COPY.settings.customPacks}</h3>
-          <p class="meta">${COPY.settings.customPacksHint}</p>
+    <details class="custom-packs-panel">
+      <summary class="custom-packs-summary">
+        <div class="custom-packs-title">
+          <div>
+            <h3>${COPY.settings.customPacks}</h3>
+            <p class="meta">${COPY.settings.customPacksClosedHint}</p>
+          </div>
+          <span class="mini-badge">${packs.length}/${CUSTOM_PROMPT_PACK_LIMIT}</span>
         </div>
-        <span class="mini-badge">${packs.length}/${CUSTOM_PROMPT_PACK_LIMIT}</span>
+      </summary>
+      <div class="custom-packs-body">
+        <p class="meta">${COPY.settings.customPacksHint}</p>
+        ${cards || `<p class="meta">Своих паков пока нет.</p>`}
+        ${createDisabled ? "" : `
+          <div class="custom-pack-create">
+            <label class="field"><span>Название нового пака</span><input id="newCustomPackName" maxlength="${CUSTOM_PACK_NAME_LIMIT}" placeholder="Например, Наши локалки"></label>
+            <label class="field"><span>Начала нового пака</span><textarea id="newCustomPackPrompts" class="custom-pack-textarea" rows="5" placeholder="${escapeHtml("Когда {{player}} сказал, что всё под контролем...\nЕсли бы {{player2}} был хостом, то...")}"></textarea></label>
+            <button class="btn primary compact-btn" data-action="create-custom-pack" type="button">${COPY.buttons.createPromptPack}</button>
+          </div>
+        `}
       </div>
-      ${cards || `<p class="meta">Своих паков пока нет.</p>`}
-      ${createDisabled ? "" : `
-        <div class="custom-pack-create">
-          <label class="field"><span>Название нового пака</span><input id="newCustomPackName" maxlength="${CUSTOM_PACK_NAME_LIMIT}" placeholder="Например, Наши локалки"></label>
-          <label class="field"><span>Начала нового пака</span><textarea id="newCustomPackPrompts" class="custom-pack-textarea" rows="5" placeholder="${escapeHtml("Когда {{player}} сказал, что всё под контролем...\\nЕсли бы {{player2}} был хостом, то...")}"></textarea></label>
-          <button class="btn primary compact-btn" data-action="create-custom-pack" type="button">${COPY.buttons.createPromptPack}</button>
-        </div>
-      `}
-    </section>
+    </details>
   `;
 }
 
@@ -1589,6 +1597,7 @@ function renderLobbyBrowser() {
 function promptPackOptionsHtml(selected = "mixed") {
   const options = [
     ["mixed", COPY.settings.packMixed],
+    ["customOnly", COPY.settings.packCustomOnly],
     ["universal", COPY.settings.packUniversal],
     ["friends", COPY.settings.packFriends],
     ["school", COPY.settings.packSchool],
@@ -1706,6 +1715,7 @@ function roomSettingsFormHtml(room = null) {
 
 
 function promptPackLabel(value) {
+  if (value === "customOnly") return COPY.settings.packCustomOnly;
   const labels = {
     mixed: COPY.settings.packMixed,
     universal: COPY.settings.packUniversal,
@@ -2613,6 +2623,14 @@ function readName() {
   return myName;
 }
 
+function validateSettingsForSubmit(settings) {
+  if (settings?.promptPack === "customOnly" && !safeArray(settings.customPromptPacks).length) {
+    showToast(COPY.messages.customPackRequired);
+    return false;
+  }
+  return true;
+}
+
 function readSettings() {
   return {
     maxRounds: document.getElementById("maxRounds")?.value ?? DEFAULT_ROOM_SETTINGS.maxRounds,
@@ -2895,8 +2913,10 @@ document.addEventListener("click", (event) => {
   }
 
   if (action === "create-room") {
+    const settings = readSettings();
+    if (!validateSettingsForSubmit(settings)) return;
     ensureNameThen(() => {
-      socket.emit("createRoom", { name: myName, sessionId, settings: readSettings() });
+      socket.emit("createRoom", { name: myName, sessionId, settings });
     });
   }
 
@@ -2907,7 +2927,9 @@ document.addEventListener("click", (event) => {
   }
 
   if (action === "save-lobby-settings") {
-    socket.emit("updateRoomSettings", { settings: readSettings() });
+    const settings = readSettings();
+    if (!validateSettingsForSubmit(settings)) return;
+    socket.emit("updateRoomSettings", { settings });
     closeSettingsModal();
   }
 

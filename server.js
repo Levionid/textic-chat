@@ -410,17 +410,19 @@ function getCustomPromptPack(room, packName = "") {
 
 function getPromptPackList(packName = "mixed", room = null) {
   const customPack = getCustomPromptPack(room, packName);
+  const customPrompts = safeArray(room?.settings?.customPromptPacks).flatMap((pack) => safeArray(pack.prompts));
   if (customPack) return customPack.prompts;
+  if (packName === "customOnly") return customPrompts;
   if (packName && packName !== "mixed" && PROMPT_PACKS[packName]) return PROMPT_PACKS[packName];
   return [
     ...Object.values(PROMPT_PACKS).flat(),
-    ...safeArray(room?.settings?.customPromptPacks).flatMap((pack) => safeArray(pack.prompts))
+    ...customPrompts
   ];
 }
 
 function getPlayerPromptPackList(packName = "mixed", room = null) {
   const customPack = getCustomPromptPack(room, packName);
-  if (customPack) return [];
+  if (customPack || packName === "customOnly") return [];
   if (packName && packName !== "mixed" && PLAYER_PROMPT_PACKS[packName]) return PLAYER_PROMPT_PACKS[packName];
   return Object.values(PLAYER_PROMPT_PACKS).flat();
 }
@@ -770,12 +772,22 @@ function pickAutoPrompt(index = 0, room = null, options = {}) {
     ? [...playerPack, ...playerPack, ...staticPack, ...COPY.autoPrompts]
     : [...staticPack, ...COPY.autoPrompts];
 
-  const template = merged[Math.abs(Math.floor(Number(index) || 0)) % merged.length];
+  const safeMerged = merged.length ? merged : COPY.autoPrompts;
+  const template = safeMerged[Math.abs(Math.floor(Number(index) || 0)) % safeMerged.length];
   return cleanText(renderPlayerPromptTemplate(template, room, index, options), PROMPT_MAX_LENGTH);
 }
 
 function randomItem(items) {
   return items[Math.floor(Math.random() * items.length)];
+}
+
+function validateNormalizedSettings(normalized) {
+  const promptPack = normalized?.settings?.promptPack;
+  const customPromptPacks = safeArray(normalized?.settings?.customPromptPacks);
+  if (promptPack === "customOnly" && !customPromptPacks.length) {
+    return "Для режима «Только свой пак» нужно создать хотя бы один свой пак или выбрать другой пак.";
+  }
+  return null;
 }
 
 function getConnectedParticipants(room) {
@@ -803,7 +815,7 @@ function normalizeSettings(raw = {}) {
   const rawPackName = String(raw.promptPack || "mixed");
   const customPackId = rawPackName.match(/^custom:([a-z0-9_-]+)$/i)?.[1];
   const hasCustomPack = customPackId && customPromptPacks.some((pack) => pack.id === normalizePackId(customPackId));
-  const promptPack = PROMPT_PACKS[rawPackName] || rawPackName === "mixed" || hasCustomPack ? rawPackName : "mixed";
+  const promptPack = PROMPT_PACKS[rawPackName] || rawPackName === "mixed" || rawPackName === "customOnly" || hasCustomPack ? rawPackName : "mixed";
 
   return {
     maxRounds: clampNumber(raw.maxRounds, 1, 20, 5),
@@ -1794,6 +1806,8 @@ io.on("connection", (socket) => {
 
     const code = generateRoomCode();
     const normalized = normalizeSettings(settings);
+    const settingsError = validateNormalizedSettings(normalized);
+    if (settingsError) return emitError(socket, settingsError);
     const room = {
       code,
       hostId: cleanSession,
@@ -1913,6 +1927,8 @@ io.on("connection", (socket) => {
     if (room.state !== "waiting") return;
 
     const normalized = normalizeSettings(settings);
+    const settingsError = validateNormalizedSettings(normalized);
+    if (settingsError) return emitError(socket, settingsError);
     const connectedCount = getConnectedPlayers(room).length;
     normalized.settings.maxPlayers = Math.max(normalized.settings.maxPlayers, connectedCount, 2);
 
