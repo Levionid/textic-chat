@@ -5935,3 +5935,41 @@ body.create-screen .game-card.create-game-card {
     font-size: clamp(34px, 14vw, 56px);
   }
 }
+
+/* Patch 32: keep lobby code box identical when code is hidden */
+.invite-code-block .room-code.secret-toggle {
+  width: min(230px, 100%);
+  height: 98px;
+  min-width: 0;
+  min-height: 98px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 72px;
+  line-height: 1;
+  letter-spacing: 0.12em;
+}
+
+.invite-code-block .room-code.secret-toggle.is-secret-hidden {
+  width: min(230px, 100%);
+  height: 98px;
+  min-width: 0;
+  min-height: 98px;
+  font-size: 72px;
+  line-height: 1;
+  letter-spacing: 0.12em;
+}
+
+@media (max-width: 700px) {
+  .invite-code-block .room-code.secret-toggle,
+  .invite-code-block .room-code.secret-toggle.is-secret-hidden {
+    width: min(280px, 100%);
+    height: 88px;
+    min-height: 88px;
+    font-size: clamp(34px, 14vw, 56px);
+    letter-spacing: 0.12em;
+  }
+}
