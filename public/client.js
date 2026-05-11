@@ -170,7 +170,7 @@ const COPY = {
     promptMixed: "Игроки + готовые начала",
     promptPack: "Пак готовых начал с никами",
     customPacks: "Свои паки начал",
-    customPacksHint: "До 2 паков на этом устройстве. Каждое начало — с новой строки. Можно использовать {{player}}, {{player2}}, {{player3}}, {{host}}, {{me}}.",
+    customPacksHint: "До 2 паков на этом устройстве. Каждое начало — с новой строки. {{player}} — случайный игрок, {{player2}} и {{player3}} — второй/третий разные игроки для шаблонов с несколькими никами, {{host}} — хост, {{me}} — автор автоначала.",
     packMixed: "Микс под компанию",
     packUniversal: "Универсальные",
     packFriends: "Для друзей",
@@ -547,11 +547,13 @@ function customPromptPacksHtml() {
         <span class="mini-badge">${packs.length}/${CUSTOM_PROMPT_PACK_LIMIT}</span>
       </div>
       ${cards || `<p class="meta">Своих паков пока нет.</p>`}
-      <div class="custom-pack-create">
-        <label class="field"><span>Название нового пака</span><input id="newCustomPackName" maxlength="${CUSTOM_PACK_NAME_LIMIT}" placeholder="Например, Наши локалки" ${createDisabled ? "disabled" : ""}></label>
-        <label class="field"><span>Начала нового пака</span><textarea id="newCustomPackPrompts" class="custom-pack-textarea" rows="5" placeholder="${escapeHtml("Когда {{player}} сказал, что всё под контролем...\nЕсли бы {{player2}} был хостом, то...")}" ${createDisabled ? "disabled" : ""}></textarea></label>
-        <button class="btn primary compact-btn" data-action="create-custom-pack" type="button" ${createDisabled ? "disabled" : ""}>${COPY.buttons.createPromptPack}</button>
-      </div>
+      ${createDisabled ? "" : `
+        <div class="custom-pack-create">
+          <label class="field"><span>Название нового пака</span><input id="newCustomPackName" maxlength="${CUSTOM_PACK_NAME_LIMIT}" placeholder="Например, Наши локалки"></label>
+          <label class="field"><span>Начала нового пака</span><textarea id="newCustomPackPrompts" class="custom-pack-textarea" rows="5" placeholder="${escapeHtml("Когда {{player}} сказал, что всё под контролем...\\nЕсли бы {{player2}} был хостом, то...")}"></textarea></label>
+          <button class="btn primary compact-btn" data-action="create-custom-pack" type="button">${COPY.buttons.createPromptPack}</button>
+        </div>
+      `}
     </section>
   `;
 }
@@ -1426,7 +1428,6 @@ function renderInviteJoin() {
       <p class="meta centered-meta">Сейчас попросим ник и добавим вас в лобби, если игра еще не началась.</p>
       <div class="actions">
         <button class="btn primary" data-action="join-invite">${myName ? "Войти в лобби" : "Ввести ник"}</button>
-        <button class="btn ghost" data-action="join-spectator-route">${COPY.buttons.joinSpectator}</button>
         <button class="btn ghost" data-route="home">Назад</button>
       </div>
     </section>
@@ -1880,9 +1881,14 @@ function renderWaiting() {
 function roomControlsHtml() {
   if (!currentRoom) return "";
   if (isSpectatorView()) {
+    const me = getMyPlayer();
+    const canBecomePlayer = currentRoom.state === "waiting" && currentRoom.settings.spectatorMode !== false && !me?.roleLocked && activeLobbyPlayers().filter((player) => player.connected).length < currentRoom.settings.maxPlayers;
+    const spectatorPrimary = currentRoom.state === "waiting" && isHost()
+      ? `<button class="btn primary" data-action="start-game">${COPY.buttons.startGame}</button>`
+      : (canBecomePlayer ? `<button class="btn primary" data-action="choose-role" data-role="player">${COPY.buttons.becomePlayer}</button>` : `<span class="meta room-controls-note">Вы смотрите игру как зритель.</span>`);
     return `
       <div class="room-controls spectator-controls">
-        <div class="room-controls-left"><span class="meta room-controls-note">Вы смотрите игру как зритель.</span></div>
+        <div class="room-controls-left">${spectatorPrimary}</div>
         <div class="room-controls-right"><button class="btn ghost danger-lite" data-action="leave-room">${COPY.buttons.leaveRoom}</button></div>
       </div>
     `;
@@ -2535,6 +2541,7 @@ function render() {
     "simple-screen",
     !currentRoom && ["home", "join", "code", "create", "lobbies", "invite", "inviteBlocked", "lobbyMissing", "notFound"].includes(currentScreen)
   );
+  document.body.classList.toggle("create-screen", !currentRoom && currentScreen === "create");
   document.body.classList.toggle("waiting-screen", Boolean(currentRoom && currentRoom.state === "waiting"));
   document.body.classList.toggle("stage-screen", Boolean(currentRoom && ["starting", "prompting", "answering", "revealing", "voting"].includes(currentRoom.state)));
   document.body.classList.toggle("scoreboard-screen", Boolean(currentRoom && ["scoreboard", "grandVoting", "finished"].includes(currentRoom.state)));
@@ -2567,7 +2574,7 @@ function render() {
   }
 
   const state = currentRoom.state;
-  if (isSpectatorView() && state !== "finished") {
+  if (isSpectatorView() && state !== "finished" && state !== "waiting") {
     renderSpectator();
     renderRoomControlsRoot();
     startTimerView();

@@ -5405,3 +5405,110 @@ body.has-room-controls .toast {
     width: 100% !important;
   }
 }
+
+/* === Patch 24: lobby/create layout fixes, QR width, desktop menu size === */
+@media (min-width: 721px) {
+  .party-home-menu {
+    width: min(430px, 100%) !important;
+    gap: 16px !important;
+  }
+
+  .party-home-menu .menu-btn,
+  .simple-menu .menu-btn {
+    width: 100% !important;
+    min-height: 62px !important;
+    padding: 16px 28px !important;
+    font-size: 20px !important;
+    border-radius: 999px !important;
+  }
+
+  .game-card.plain-menu-card {
+    width: min(520px, 100%) !important;
+  }
+}
+
+/* Create page must scroll on desktop too. */
+body.create-screen {
+  overflow-y: auto !important;
+}
+
+body.create-screen .app {
+  min-height: auto !important;
+  display: block !important;
+  align-content: start !important;
+  padding-top: clamp(26px, 4vh, 52px) !important;
+  padding-bottom: calc(80px + var(--safe-bottom, 0px)) !important;
+}
+
+body.create-screen .game-card.create-game-card {
+  width: min(900px, 100%) !important;
+  margin-inline: auto !important;
+}
+
+/* Waiting lobby should start from the top when content is taller than viewport. */
+body.waiting-screen .app {
+  align-content: start !important;
+  padding-top: clamp(24px, 4vh, 48px) !important;
+}
+
+body.waiting-screen .lobby-shell {
+  width: min(1040px, 100%) !important;
+  margin-inline: auto !important;
+  padding-bottom: calc(150px + var(--safe-bottom, 0px)) !important;
+}
+
+.invite-panel,
+.waiting-grid,
+.single-qr-grid {
+  width: min(1040px, 100%) !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+.single-qr-grid {
+  margin-top: 16px !important;
+}
+
+.single-qr-grid .qr-card {
+  width: 100% !important;
+  min-height: 138px !important;
+  align-items: center !important;
+}
+
+@media (min-width: 861px) {
+  .single-qr-grid .qr-card {
+    grid-template-columns: 132px minmax(0, 1fr) !important;
+    justify-items: stretch !important;
+  }
+
+  .single-qr-grid .qr-image {
+    align-self: center !important;
+    justify-self: center !important;
+  }
+}
+
+/* Do not let the floating controls cover the waiting content. */
+body.waiting-screen.has-room-controls,
+body.waiting-screen.has-room-controls .app {
+  padding-bottom: calc(150px + var(--safe-bottom, 0px)) !important;
+}
+
+@media (max-width: 720px) {
+  body.create-screen .app {
+    width: min(100% - 20px, 520px) !important;
+    padding-top: max(20px, env(safe-area-inset-top, 0px)) !important;
+    padding-bottom: calc(42px + var(--safe-bottom, 0px)) !important;
+  }
+
+  body.waiting-screen .app {
+    padding-top: max(18px, env(safe-area-inset-top, 0px)) !important;
+  }
+
+  body.waiting-screen .lobby-shell {
+    padding-bottom: calc(210px + var(--safe-bottom, 0px)) !important;
+  }
+
+  .single-qr-grid .qr-card {
+    min-height: auto !important;
+  }
+}
