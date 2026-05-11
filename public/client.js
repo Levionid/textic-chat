@@ -396,6 +396,8 @@ let previousState = null;
 let timerInterval = null;
 let sessionId = getOrCreateSessionId();
 let openRooms = [];
+let lobbySearchQuery = "";
+let lobbyModeFilter = "all";
 let lobbySettingsOpen = false;
 let settingsModalInitialSignature = null;
 let openRoomsLoading = false;
@@ -1827,6 +1829,34 @@ function lobbyModeFilterOptionsHtml() {
   return options.map(([value, label]) => `<option value="${escapeHtml(value)}" ${lobbyModeFilter === value ? "selected" : ""}>${escapeHtml(label)}</option>`).join("");
 }
 
+function lobbyModeFilterLabel() {
+  if (lobbyModeFilter === "all") return "Все режимы";
+  return gameModeInfo(lobbyModeFilter).shortTitle || "Режим";
+}
+
+function lobbyModeFilterMenuHtml() {
+  const options = [["all", "Все режимы"], ...Object.values(GAME_MODES).map((mode) => [mode.id, mode.shortTitle])];
+  return `
+    <details class="lobby-filter-menu">
+      <summary class="lobby-filter-trigger" aria-label="Фильтр по режимам">
+        <span class="burger-lines" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span>${escapeHtml(lobbyModeFilterLabel())}</span>
+        <span class="filter-chevron" aria-hidden="true">▾</span>
+      </summary>
+      <div class="lobby-filter-popover">
+        ${options.map(([value, label]) => `
+          <button
+            class="lobby-filter-option ${lobbyModeFilter === value ? "is-active" : ""}"
+            data-action="set-lobby-mode-filter"
+            data-filter-value="${escapeHtml(value)}"
+            type="button"
+          >${escapeHtml(label)}</button>
+        `).join("")}
+      </div>
+    </details>
+  `;
+}
+
 function openRoomsHtml({ compact = false } = {}) {
   if (openRoomsLoading) {
     return `
@@ -1880,23 +1910,30 @@ function openRoomsHtml({ compact = false } = {}) {
 
 function renderLobbyBrowser() {
   const rooms = filteredOpenRooms();
-  app.classList.add("server-list-card");
+  app.classList.add("server-list-card", "lobby-free-card");
   app.innerHTML = `
-    <h2 class="panel-title centered-title lobby-browser-title">${COPY.screens.lobbies}</h2>
-    <section class="lobby-browser-panel">
-      <div class="lobby-browser-toolbar">
-        <div class="lobby-browser-count">${rooms.length} из ${openRooms.length} лобби</div>
-        <div class="actions">
-          <button class="btn ghost icon-btn" data-action="refresh-lobbies" title="${COPY.buttons.refreshRooms}" aria-label="${COPY.buttons.refreshRooms}">↻</button>
-          <button class="btn ghost icon-btn" data-route="join" title="Назад" aria-label="Назад">←</button>
+    <section class="lobby-free-shell">
+      <header class="lobby-free-head">
+        <div>
+          <h2 class="panel-title lobby-browser-title">${COPY.screens.lobbies}</h2>
+          <p class="meta lobby-sort-note">Почти заполненные лобби выше. Полные комнаты недоступны для входа.</p>
         </div>
+        <div class="lobby-free-actions">
+          <button class="round-tool-btn" data-action="refresh-lobbies" title="${COPY.buttons.refreshRooms}" aria-label="${COPY.buttons.refreshRooms}" type="button">↻</button>
+          <button class="round-tool-btn" data-route="join" title="Назад" aria-label="Назад" type="button">←</button>
+        </div>
+      </header>
+
+      <div class="lobby-free-controls">
+        <div class="lobby-search-wrap">
+          <span class="search-icon" aria-hidden="true">⌕</span>
+          <input id="lobbySearchInput" class="lobby-search-input" type="search" placeholder="Поиск по коду, хосту или режиму" value="${escapeHtml(lobbySearchQuery)}">
+        </div>
+        ${lobbyModeFilterMenuHtml()}
+        <div class="lobby-browser-count">${rooms.length} из ${openRooms.length}</div>
       </div>
-      <div class="lobby-filters">
-        <input id="lobbySearchInput" class="lobby-search-input" type="search" placeholder="Поиск по коду, хосту или режиму" value="${escapeHtml(lobbySearchQuery)}">
-        <select id="lobbyModeFilter" class="lobby-mode-filter">${lobbyModeFilterOptionsHtml()}</select>
-      </div>
-      <p class="meta lobby-sort-note">Сначала показываются почти заполненные лобби. Полные комнаты уходят вниз и недоступны для входа.</p>
-      <div class="rooms-frame">${openRoomsHtml()}</div>
+
+      <div class="rooms-free-frame">${openRoomsHtml()}</div>
     </section>
   `;
 }
@@ -2984,7 +3021,7 @@ function render() {
   if (!currentRoom || currentRoom.state !== "waiting" || !lobbySettingsOpen) {
     closeSettingsModal();
   }
-  app.classList.remove("plain-menu-card", "code-join-card", "server-list-card", "create-game-card", "waiting-room-card", "game-stage-card", "compact-game-stage-card", "scoreboard-stage-card");
+  app.classList.remove("plain-menu-card", "code-join-card", "server-list-card", "lobby-free-card", "create-game-card", "waiting-room-card", "game-stage-card", "compact-game-stage-card", "scoreboard-stage-card");
   document.body.classList.toggle("home-screen", !currentRoom && currentScreen === "home");
   document.body.classList.toggle(
     "simple-screen",
@@ -3107,6 +3144,12 @@ document.addEventListener("input", (event) => {
 });
 
 document.addEventListener("change", async (event) => {
+  if (event.target?.id === "lobbyModeFilter") {
+    lobbyModeFilter = event.target.value || "all";
+    render();
+    return;
+  }
+
   const input = event.target?.closest?.("[data-audio-input]");
   if (!input) return;
   const type = input.dataset.audioInput;
@@ -3281,6 +3324,12 @@ document.addEventListener("click", (event) => {
   if (action === "refresh-lobbies") {
     requestOpenRooms();
     render();
+  }
+
+  if (action === "set-lobby-mode-filter") {
+    lobbyModeFilter = button.dataset.filterValue || "all";
+    render();
+    return;
   }
 
   if (action === "toggle-lobby-secret") {
