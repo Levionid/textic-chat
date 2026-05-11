@@ -5905,3 +5905,33 @@ body.create-screen .game-card.create-game-card {
   outline: 3px solid rgba(255, 209, 102, 0.36);
   outline-offset: 4px;
 }
+
+/* Patch 31: restore large lobby code size after secret-toggle button reset */
+.room-code.secret-toggle {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0.12em;
+}
+
+.invite-code-block .room-code.secret-toggle {
+  min-width: 182px;
+  min-height: 78px;
+  padding: 12px 18px;
+  border-radius: 18px;
+  font-size: clamp(42px, 7vw, 72px);
+}
+
+.room-code.secret-toggle.is-secret-hidden {
+  min-width: 182px;
+  letter-spacing: 0.18em;
+}
+
+@media (max-width: 700px) {
+  .invite-code-block .room-code.secret-toggle,
+  .room-code.secret-toggle.is-secret-hidden {
+    min-width: min(280px, 100%);
+    min-height: 70px;
+    font-size: clamp(34px, 14vw, 56px);
+  }
+}
