@@ -16,7 +16,8 @@ const controlsRoot = document.getElementById("roomControlsRoot") || (() => {
 const STORAGE_KEYS = {
   sessionId: "dobeyFrazu.sessionId",
   roomCode: "dobeyFrazu.roomCode",
-  playerName: "dobeyFrazu.playerName"
+  playerName: "dobeyFrazu.playerName",
+  customPromptPacks: "dobeyFrazu.customPromptPacks"
 };
 
 const ROUTES = {
@@ -58,6 +59,9 @@ const SOUND_FILES = {
 const MAX_AUDIO_BYTES = 20 * 1024 * 1024;
 const MAX_RECORDING_MS = 60 * 1000;
 const AUDIO_ACCEPT = "audio/*,video/webm,video/mp4,.mp3,.wav,.ogg,.webm,.m4a,.aac,.flac";
+const CUSTOM_PROMPT_PACK_LIMIT = 2;
+const CUSTOM_PROMPTS_PER_PACK_LIMIT = 80;
+const CUSTOM_PACK_NAME_LIMIT = 36;
 
 
 const COPY = {
@@ -92,12 +96,23 @@ const COPY = {
     copyCode: "Скопировать код",
     copyInvite: "Скопировать ссылку",
     copyWatch: "Ссылка зрителя",
+    becomeSpectator: "Стать зрителем",
+    becomePlayer: "Вернуться игроком",
+    moveToSpectator: "В зрители",
+    moveToPlayer: "В игроки",
+    giveChoice: "Дать выбор",
+    kickPlayer: "Кик",
+    banPlayer: "Бан",
+    transferHost: "Сделать хостом",
     shareInvite: "Поделиться",
     shareCard: "Share-картинка",
     joinSpectator: "Войти зрителем",
     editSettings: "Изменить настройки",
     saveSettings: "Сохранить",
     cancelSettings: "Отмена",
+    createPromptPack: "Создать свой пак",
+    savePromptPack: "Сохранить пак",
+    deletePromptPack: "Удалить пак",
     startGame: "Начать игру",
     submitPrompt: "Зафиксить начало",
     updatePrompt: "Обновить начало",
@@ -154,6 +169,8 @@ const COPY = {
     promptAuto: "Игра предлагает начала автоматически",
     promptMixed: "Игроки + готовые начала",
     promptPack: "Пак готовых начал с никами",
+    customPacks: "Свои паки начал",
+    customPacksHint: "До 2 паков на этом устройстве. Каждое начало — с новой строки. Можно использовать {{player}}, {{player2}}, {{player3}}, {{host}}, {{me}}.",
     packMixed: "Микс под компанию",
     packUniversal: "Универсальные",
     packFriends: "Для друзей",
@@ -213,6 +230,10 @@ const COPY = {
     audioUnsupported: "Выберите аудио: mp3, wav, ogg, webm, m4a, aac, flac или запись webm/mp4.",
     audioReady: "Аудио добавлено.",
     audioRemoved: "Аудио убрано.",
+    customPackLimit: "Можно создать максимум 2 своих пака на этом устройстве.",
+    customPackSaved: "Пак сохранён.",
+    customPackDeleted: "Пак удалён.",
+    customPackEmpty: "Добавь название и хотя бы одно начало.",
     recordingStarted: "Запись началась. Максимум 1 минута.",
     recordingLimit: "Запись остановлена: максимум 1 минута.",
     micDenied: "Не получилось включить микрофон. Проверьте разрешения браузера.",
@@ -222,6 +243,9 @@ const COPY = {
     spectatorJoined: "Вы вошли зрителем. Можно смотреть, реагировать и не занимать место игрока.",
     shareFailed: "Не получилось открыть системное меню. Скачал картинку.",
     shareReady: "Share-картинка готова.",
+    roleChanged: "Роль изменена.",
+    kicked: "Вас кикнули из лобби.",
+    banned: "Вас забанили в этом лобби.",
     hostStartsVoting: "Ждем, пока хост запустит голосование.",
     hostDecision: "Хост выбирает следующий шаг.",
     hostCanRestart: "Хост может вернуть всех в лобби.",
@@ -370,6 +394,26 @@ function getMyId() {
   return sessionId;
 }
 
+function getMyPlayer() {
+  return currentRoom?.players?.find((player) => player.id === getMyId()) || null;
+}
+
+function isSelfSpectator() {
+  return getMyPlayer()?.role === "spectator";
+}
+
+function isSpectatorView() {
+  return viewerMode || isSelfSpectator();
+}
+
+function activeLobbyPlayers(room = currentRoom) {
+  return (room?.players || []).filter((player) => player.role !== "spectator");
+}
+
+function lobbySpectators(room = currentRoom) {
+  return (room?.players || []).filter((player) => player.role === "spectator");
+}
+
 function randomWaitingMessage(seed = 0) {
   const index = Math.abs(seed + (currentRoom?.round || 0)) % COPY.status.length;
   return COPY.status[index];
@@ -417,6 +461,99 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function normalizePackId(value = "") {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "")
+    .slice(0, 32);
+}
+
+function createPromptPackId() {
+  return `pack_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function parsePromptLines(value = "") {
+  return String(value || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, CUSTOM_PROMPTS_PER_PACK_LIMIT);
+}
+
+function sanitizeCustomPromptPack(pack, index = 0) {
+  const id = normalizePackId(pack?.id) || createPromptPackId();
+  const name = String(pack?.name || `Свой пак ${index + 1}`).trim().slice(0, CUSTOM_PACK_NAME_LIMIT);
+  const prompts = Array.isArray(pack?.prompts)
+    ? pack.prompts.map((line) => String(line || "").trim()).filter(Boolean).slice(0, CUSTOM_PROMPTS_PER_PACK_LIMIT)
+    : parsePromptLines(pack?.promptsText || "");
+  if (!name || !prompts.length) return null;
+  return { id, name, prompts };
+}
+
+function loadCustomPromptPacks() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEYS.customPromptPacks) || "[]");
+    const packs = Array.isArray(parsed) ? parsed : [];
+    return packs
+      .slice(0, CUSTOM_PROMPT_PACK_LIMIT)
+      .map((pack, index) => sanitizeCustomPromptPack(pack, index))
+      .filter(Boolean);
+  } catch (error) {
+    return [];
+  }
+}
+
+function saveCustomPromptPacks(packs) {
+  const clean = (Array.isArray(packs) ? packs : [])
+    .slice(0, CUSTOM_PROMPT_PACK_LIMIT)
+    .map((pack, index) => sanitizeCustomPromptPack(pack, index))
+    .filter(Boolean);
+  localStorage.setItem(STORAGE_KEYS.customPromptPacks, JSON.stringify(clean));
+  return clean;
+}
+
+function customPromptPackById(id) {
+  return loadCustomPromptPacks().find((pack) => pack.id === normalizePackId(id));
+}
+
+function customPromptPacksHtml() {
+  const packs = loadCustomPromptPacks();
+  const cards = packs.map((pack, index) => `
+    <article class="custom-pack-card" data-pack-id="${escapeHtml(pack.id)}">
+      <div class="custom-pack-head">
+        <div>
+          <strong>Пак ${index + 1}</strong>
+          <p class="meta">${pack.prompts.length} начал</p>
+        </div>
+        <button class="btn ghost mini-btn" data-action="delete-custom-pack" data-pack-id="${escapeHtml(pack.id)}" type="button">${COPY.buttons.deletePromptPack}</button>
+      </div>
+      <label class="field"><span>Название</span><input data-custom-pack-name="${escapeHtml(pack.id)}" maxlength="${CUSTOM_PACK_NAME_LIMIT}" value="${escapeHtml(pack.name)}"></label>
+      <label class="field"><span>Начала фраз</span><textarea class="custom-pack-textarea" data-custom-pack-prompts="${escapeHtml(pack.id)}" rows="5">${escapeHtml(pack.prompts.join("\n"))}</textarea></label>
+      <button class="btn secondary compact-btn" data-action="save-custom-pack" data-pack-id="${escapeHtml(pack.id)}" type="button">${COPY.buttons.savePromptPack}</button>
+    </article>
+  `).join("");
+
+  const createDisabled = packs.length >= CUSTOM_PROMPT_PACK_LIMIT;
+  return `
+    <section class="custom-packs-panel">
+      <div class="custom-packs-title">
+        <div>
+          <h3>${COPY.settings.customPacks}</h3>
+          <p class="meta">${COPY.settings.customPacksHint}</p>
+        </div>
+        <span class="mini-badge">${packs.length}/${CUSTOM_PROMPT_PACK_LIMIT}</span>
+      </div>
+      ${cards || `<p class="meta">Своих паков пока нет.</p>`}
+      <div class="custom-pack-create">
+        <label class="field"><span>Название нового пака</span><input id="newCustomPackName" maxlength="${CUSTOM_PACK_NAME_LIMIT}" placeholder="Например, Наши локалки" ${createDisabled ? "disabled" : ""}></label>
+        <label class="field"><span>Начала нового пака</span><textarea id="newCustomPackPrompts" class="custom-pack-textarea" rows="5" placeholder="${escapeHtml("Когда {{player}} сказал, что всё под контролем...\nЕсли бы {{player2}} был хостом, то...")}" ${createDisabled ? "disabled" : ""}></textarea></label>
+        <button class="btn primary compact-btn" data-action="create-custom-pack" type="button" ${createDisabled ? "disabled" : ""}>${COPY.buttons.createPromptPack}</button>
+      </div>
+    </section>
+  `;
 }
 
 function getMe() {
@@ -1243,8 +1380,6 @@ function renderHome() {
     <div class="simple-menu party-home-menu">
       <button class="btn primary menu-btn" data-route="create">Создать игру</button>
       <button class="btn primary menu-btn" data-route="join">Войти в игру</button>
-      <button class="btn ghost menu-btn" data-route="lobbies">Открытые лобби</button>
-      <p class="meta party-mode-hint">Party-mode: крупные кнопки, QR-вход и один экран — одно действие.</p>
     </div>
   `;
 }
@@ -1464,7 +1599,14 @@ function promptPackOptionsHtml(selected = "mixed") {
     ["kz", COPY.settings.packKz],
     ["softRoast", COPY.settings.packSoftRoast]
   ];
-  return options.map(([value, label]) => `<option value="${value}" ${selected === value ? "selected" : ""}>${escapeHtml(label)}</option>`).join("");
+  const builtIn = options.map(([value, label]) => `<option value="${value}" ${selected === value ? "selected" : ""}>${escapeHtml(label)}</option>`).join("");
+  const custom = loadCustomPromptPacks()
+    .map((pack) => {
+      const value = `custom:${pack.id}`;
+      return `<option value="${escapeHtml(value)}" ${selected === value ? "selected" : ""}>Свой: ${escapeHtml(pack.name)}</option>`;
+    })
+    .join("");
+  return builtIn + custom;
 }
 
 function renderCreateRoom() {
@@ -1485,6 +1627,7 @@ function renderCreateRoom() {
       <label class="field"><span>${COPY.settings.promptPack}</span>
         <select id="promptPack">${promptPackOptionsHtml()}</select>
       </label>
+      <div class="grid-span-all">${customPromptPacksHtml()}</div>
       <label class="field"><span>${COPY.settings.spectatorVoting}</span>
         <select id="spectatorVoting">
           <option value="off">${COPY.settings.spectatorOff}</option>
@@ -1531,6 +1674,7 @@ function roomSettingsFormHtml(room = null) {
           </select>
         </label>
         <label class="field"><span>${COPY.settings.promptPack}</span><select id="promptPack">${promptPackOptionsHtml(settings.promptPack || "mixed")}</select></label>
+        <div class="grid-span-all">${customPromptPacksHtml()}</div>
         <label class="field"><span>${COPY.settings.spectatorVoting}</span>
           <select id="spectatorVoting">
             <option value="off" ${settings.spectatorVoting === "off" ? "selected" : ""}>${COPY.settings.spectatorOff}</option>
@@ -1574,6 +1718,11 @@ function promptPackLabel(value) {
     kz: COPY.settings.packKz,
     softRoast: COPY.settings.packSoftRoast
   };
+  const customId = String(value || "").match(/^custom:([a-z0-9_-]+)$/i)?.[1];
+  if (customId) {
+    const pack = customPromptPackById(customId);
+    return pack ? `Свой: ${pack.name}` : "Свой пак";
+  }
   return labels[value] || labels.mixed;
 }
 
@@ -1590,28 +1739,88 @@ function settingsSummary(room) {
   `;
 }
 
-function playersHtml() {
+function playerAdminActionsHtml(player) {
+  if (!isHost() || !currentRoom || player.id === getMyId()) return "";
+  const targetRole = player.role === "spectator" ? "player" : "spectator";
   return `
-    <div class="players">
-      ${currentRoom.players.map((player) => `
-        <div class="pill ${player.connected ? "" : "disconnected"}">
-          <span class="player-name">
-            <span class="avatar">${escapeHtml(getInitial(player.name))}</span>
-            ${escapeHtml(player.name)}
-            ${player.id === getMyId() ? `<button class="name-edit-inline" data-action="edit-name">Изменить ник</button>` : ""}
-            ${player.id === currentRoom.hostId ? '<span class="badge">хост</span>' : ""}
-          </span>
-          <span class="player-status">${player.connected ? "в лобби" : "отключился"}</span>
-        </div>
-      `).join("")}
+    <div class="player-admin-actions">
+      <button class="mini-action" data-action="set-player-role" data-player-id="${escapeHtml(player.id)}" data-role="${targetRole}">${targetRole === "spectator" ? COPY.buttons.moveToSpectator : COPY.buttons.moveToPlayer}</button>
+      ${player.roleLocked ? `<button class="mini-action" data-action="unlock-role-choice" data-player-id="${escapeHtml(player.id)}">${COPY.buttons.giveChoice}</button>` : ""}
+      <button class="mini-action" data-action="transfer-host" data-player-id="${escapeHtml(player.id)}">${COPY.buttons.transferHost}</button>
+      <button class="mini-action danger" data-action="kick-player" data-player-id="${escapeHtml(player.id)}">${COPY.buttons.kickPlayer}</button>
+      <button class="mini-action danger" data-action="ban-player" data-player-id="${escapeHtml(player.id)}">${COPY.buttons.banPlayer}</button>
     </div>
   `;
 }
 
+function playerPillHtml(player, role) {
+  const hostBadge = player.id === currentRoom.hostId ? '<span class="badge">хост</span>' : "";
+  const lockedBadge = player.roleLocked ? '<span class="badge muted-badge">роль задана хостом</span>' : "";
+  return `
+    <div class="pill player-pill ${player.connected ? "" : "disconnected"} ${player.role === "spectator" ? "spectator-pill" : ""}" draggable="${isHost() && player.id !== getMyId() ? "true" : "false"}" data-player-id="${escapeHtml(player.id)}" data-role="${role}">
+      <span class="player-name">
+        <span class="avatar">${escapeHtml(getInitial(player.name))}</span>
+        <span class="player-name-text">${escapeHtml(player.name)}</span>
+        ${player.id === getMyId() ? `<button class="name-edit-inline" data-action="edit-name">Изменить ник</button>` : ""}
+        ${hostBadge}
+        ${lockedBadge}
+      </span>
+      <span class="player-status">${player.connected ? (player.role === "spectator" ? "зритель" : "в лобби") : "отключился"}</span>
+      ${playerAdminActionsHtml(player)}
+    </div>
+  `;
+}
+
+function playersHtml() {
+  const active = activeLobbyPlayers();
+  const spectators = lobbySpectators();
+  const canChoose = currentRoom?.settings?.spectatorMode !== false && currentRoom?.state === "waiting" && !getMyPlayer()?.roleLocked;
+  return `
+    <div class="role-lists">
+      <div class="role-list role-drop-zone" data-drop-role="player">
+        <div class="role-list-head"><span>Игроки</span><span>${active.filter((player) => player.connected).length}/${currentRoom.settings.maxPlayers}</span></div>
+        <div class="players">
+          ${active.length ? active.map((player) => playerPillHtml(player, "player")).join("") : `<p class="meta empty-role">Пока нет игроков.</p>`}
+        </div>
+      </div>
+      <div class="role-list role-drop-zone" data-drop-role="spectator">
+        <div class="role-list-head"><span>Зрители</span><span>${spectators.filter((player) => player.connected).length}</span></div>
+        <div class="players spectators-list">
+          ${spectators.length ? spectators.map((player) => playerPillHtml(player, "spectator")).join("") : `<p class="meta empty-role">Можно перетащить игрока сюда.</p>`}
+        </div>
+      </div>
+      ${canChoose ? `
+        <div class="actions role-self-actions">
+          ${isSelfSpectator()
+            ? `<button class="btn ghost compact-btn" data-action="choose-role" data-role="player">${COPY.buttons.becomePlayer}</button>`
+            : `<button class="btn ghost compact-btn" data-action="choose-role" data-role="spectator">${COPY.buttons.becomeSpectator}</button>`}
+        </div>
+      ` : ""}
+    </div>
+  `;
+}
+
+
+function hostManageControlsHtml() {
+  if (!isHost() || !currentRoom || currentRoom.state === "waiting") return "";
+  return `
+    <details class="host-manage-menu">
+      <summary>Игроки</summary>
+      <div class="host-manage-list">
+        ${currentRoom.players.map((player) => `
+          <div class="host-manage-row">
+            <span>${escapeHtml(player.name)}${player.id === currentRoom.hostId ? " · хост" : ""}${player.role === "spectator" ? " · зритель" : ""}</span>
+            ${playerAdminActionsHtml(player)}
+          </div>
+        `).join("")}
+      </div>
+    </details>
+  `;
+}
+
 function renderWaiting() {
-  const onlineCount = currentRoom.players.filter((player) => player.connected).length;
+  const onlineCount = activeLobbyPlayers().filter((player) => player.connected).length;
   const link = inviteLink(currentRoom.code);
-  const spectatorLink = watchLink(currentRoom.code);
   app.classList.add("waiting-room-card");
   app.innerHTML = `
     <div class="lobby-shell waiting-room">
@@ -1635,14 +1844,12 @@ function renderWaiting() {
             <button class="btn primary compact-btn" data-action="copy-invite-link">${COPY.buttons.copyInvite}</button>
             <button class="btn ghost compact-btn" data-action="share-invite-link">${COPY.buttons.shareInvite}</button>
             <button class="btn ghost compact-btn" data-action="copy-code">${COPY.buttons.copyCode}</button>
-            ${currentRoom.settings.spectatorMode !== false ? `<button class="btn ghost compact-btn" data-action="copy-watch-link">${COPY.buttons.copyWatch}</button>` : ""}
           </div>
         </div>
       </section>
 
-      <section class="lobby-qr-grid">
-        ${qrImageHtml(link, "QR игрока")}
-        ${currentRoom.settings.spectatorMode !== false ? qrImageHtml(spectatorLink, "QR зрителя") : ""}
+      <section class="lobby-qr-grid single-qr-grid">
+        ${qrImageHtml(link, "QR для входа")}
       </section>
 
       <div class="waiting-grid">
@@ -1672,7 +1879,7 @@ function renderWaiting() {
 
 function roomControlsHtml() {
   if (!currentRoom) return "";
-  if (viewerMode) {
+  if (isSpectatorView()) {
     return `
       <div class="room-controls spectator-controls">
         <div class="room-controls-left"><span class="meta room-controls-note">Вы смотрите игру как зритель.</span></div>
@@ -1680,7 +1887,7 @@ function roomControlsHtml() {
       </div>
     `;
   }
-  const onlineCount = currentRoom.players.filter((player) => player.connected).length;
+  const onlineCount = activeLobbyPlayers().filter((player) => player.connected).length;
   const showLeaveButton = !(currentRoom.state === "waiting" && onlineCount <= 1);
 
   let primaryAction = "";
@@ -1743,6 +1950,7 @@ function roomControlsHtml() {
         ${primaryAction}
         ${statusNote}
       </div>
+      ${hostManageControlsHtml()}
       <div class="room-controls-right">
         ${showLeaveButton ? `<button class="btn ghost danger-lite" data-action="leave-room">${COPY.buttons.leaveRoom}</button>` : ""}
         ${isHost() ? `<button class="btn danger" data-action="delete-room">${COPY.buttons.deleteRoom}</button>` : ""}
@@ -2359,7 +2567,7 @@ function render() {
   }
 
   const state = currentRoom.state;
-  if (viewerMode && state !== "finished") {
+  if (isSpectatorView() && state !== "finished") {
     renderSpectator();
     renderRoomControlsRoot();
     startTimerView();
@@ -2408,6 +2616,7 @@ function readSettings() {
     soundsEnabled: document.getElementById("soundsEnabled")?.checked ?? DEFAULT_ROOM_SETTINGS.soundsEnabled,
     promptMode: document.getElementById("promptMode")?.value ?? DEFAULT_ROOM_SETTINGS.promptMode,
     promptPack: document.getElementById("promptPack")?.value ?? DEFAULT_ROOM_SETTINGS.promptPack,
+    customPromptPacks: loadCustomPromptPacks(),
     spectatorMode: document.getElementById("spectatorMode")?.checked ?? DEFAULT_ROOM_SETTINGS.spectatorMode,
     spectatorVoting: document.getElementById("spectatorVoting")?.value ?? DEFAULT_ROOM_SETTINGS.spectatorVoting,
     assignmentMode: document.getElementById("assignmentMode")?.value ?? DEFAULT_ROOM_SETTINGS.assignmentMode,
@@ -2515,7 +2724,13 @@ document.addEventListener("click", (event) => {
     "vote",
     "grand-vote",
     "leave-room",
-    "delete-room"
+    "delete-room",
+    "choose-role",
+    "set-player-role",
+    "unlock-role-choice",
+    "transfer-host",
+    "kick-player",
+    "ban-player"
   ];
 
   const shouldPlayGenericClick =
@@ -2629,6 +2844,49 @@ document.addEventListener("click", (event) => {
     render();
   }
 
+  if (action === "create-custom-pack") {
+    const packs = loadCustomPromptPacks();
+    if (packs.length >= CUSTOM_PROMPT_PACK_LIMIT) return showToast(COPY.messages.customPackLimit);
+    const name = document.getElementById("newCustomPackName")?.value.trim();
+    const prompts = parsePromptLines(document.getElementById("newCustomPackPrompts")?.value || "");
+    const pack = sanitizeCustomPromptPack({ id: createPromptPackId(), name, prompts }, packs.length);
+    if (!pack) return showToast(COPY.messages.customPackEmpty);
+    saveCustomPromptPacks([...packs, pack]);
+    showToast(COPY.messages.customPackSaved);
+    if (lobbySettingsOpen) renderSettingsModal();
+    else render();
+    return;
+  }
+
+  if (action === "save-custom-pack") {
+    const packId = normalizePackId(button.dataset.packId);
+    const packs = loadCustomPromptPacks();
+    const index = packs.findIndex((pack) => pack.id === packId);
+    if (index === -1) return;
+    const name = document.querySelector(`[data-custom-pack-name="${packId}"]`)?.value.trim();
+    const prompts = parsePromptLines(document.querySelector(`[data-custom-pack-prompts="${packId}"]`)?.value || "");
+    const pack = sanitizeCustomPromptPack({ id: packId, name, prompts }, index);
+    if (!pack) return showToast(COPY.messages.customPackEmpty);
+    packs[index] = pack;
+    saveCustomPromptPacks(packs);
+    showToast(COPY.messages.customPackSaved);
+    if (lobbySettingsOpen) renderSettingsModal();
+    else render();
+    return;
+  }
+
+  if (action === "delete-custom-pack") {
+    const packId = normalizePackId(button.dataset.packId);
+    const packs = loadCustomPromptPacks().filter((pack) => pack.id !== packId);
+    saveCustomPromptPacks(packs);
+    const select = document.getElementById("promptPack");
+    if (select?.value === `custom:${packId}`) select.value = "mixed";
+    showToast(COPY.messages.customPackDeleted);
+    if (lobbySettingsOpen) renderSettingsModal();
+    else render();
+    return;
+  }
+
   if (action === "create-room") {
     ensureNameThen(() => {
       socket.emit("createRoom", { name: myName, sessionId, settings: readSettings() });
@@ -2711,6 +2969,33 @@ document.addEventListener("click", (event) => {
   if (action === "share-invite-link") shareInviteLink(currentRoom.code);
   if (action === "start-game") socket.emit("startGame");
 
+  if (action === "choose-role") {
+    socket.emit("chooseRole", { role: button.dataset.role });
+  }
+
+  if (action === "set-player-role") {
+    socket.emit("setPlayerRole", { playerId: button.dataset.playerId, role: button.dataset.role, locked: true });
+  }
+
+  if (action === "unlock-role-choice") {
+    socket.emit("unlockRoleChoice", { playerId: button.dataset.playerId });
+  }
+
+  if (action === "transfer-host") {
+    if (!window.confirm("Передать роль хоста этому игроку?")) return;
+    socket.emit("transferHost", { playerId: button.dataset.playerId });
+  }
+
+  if (action === "kick-player") {
+    if (!window.confirm("Кикнуть игрока из лобби?")) return;
+    socket.emit("kickPlayer", { playerId: button.dataset.playerId });
+  }
+
+  if (action === "ban-player") {
+    if (!window.confirm("Забанить игрока в этом лобби?")) return;
+    socket.emit("banPlayer", { playerId: button.dataset.playerId });
+  }
+
   if (action === "submit-prompt") {
     const text = document.getElementById("promptInput")?.value || "";
     const audio = getPromptAudioDraft();
@@ -2770,6 +3055,44 @@ document.addEventListener("click", (event) => {
     if (!window.confirm(COPY.messages.confirmDelete)) return;
     socket.emit("deleteRoom");
   }
+});
+
+document.addEventListener("dragstart", (event) => {
+  const pill = event.target.closest(".player-pill[draggable='true']");
+  if (!pill || !isHost()) return;
+  event.dataTransfer.setData("text/plain", pill.dataset.playerId);
+  event.dataTransfer.effectAllowed = "move";
+  pill.classList.add("dragging");
+});
+
+document.addEventListener("dragend", (event) => {
+  event.target.closest(".player-pill")?.classList.remove("dragging");
+  document.querySelectorAll(".role-drop-zone.is-drag-over").forEach((zone) => zone.classList.remove("is-drag-over"));
+});
+
+document.addEventListener("dragover", (event) => {
+  const zone = event.target.closest(".role-drop-zone");
+  if (!zone || !isHost()) return;
+  event.preventDefault();
+  zone.classList.add("is-drag-over");
+  event.dataTransfer.dropEffect = "move";
+});
+
+document.addEventListener("dragleave", (event) => {
+  const zone = event.target.closest(".role-drop-zone");
+  if (!zone) return;
+  if (!zone.contains(event.relatedTarget)) zone.classList.remove("is-drag-over");
+});
+
+document.addEventListener("drop", (event) => {
+  const zone = event.target.closest(".role-drop-zone");
+  if (!zone || !isHost()) return;
+  event.preventDefault();
+  zone.classList.remove("is-drag-over");
+  const playerId = event.dataTransfer.getData("text/plain");
+  const role = zone.dataset.dropRole;
+  if (!playerId || !role) return;
+  socket.emit("setPlayerRole", { playerId, role, locked: true });
 });
 
 function returnHomeFromRoom(message) {
@@ -2919,6 +3242,16 @@ socket.on("leftRoom", () => {
 socket.on("roomDeleted", ({ message } = {}) => {
   playSound("leave");
   returnHomeFromRoom(message || COPY.messages.roomDeleted);
+});
+
+socket.on("kickedFromRoom", ({ message } = {}) => {
+  playSound("leave");
+  returnHomeFromRoom(message || COPY.messages.kicked);
+});
+
+socket.on("bannedFromRoom", ({ message } = {}) => {
+  playSound("leave");
+  returnHomeFromRoom(message || COPY.messages.banned);
 });
 
 socket.on("disconnect", () => {

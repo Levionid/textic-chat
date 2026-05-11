@@ -94,7 +94,13 @@ const COPY = {
     noAssignment: "Вам еще не выдана фраза. Попробуйте обновить страницу.",
     jokeMissing: "Шутка не найдена.",
     selfVote: "За себя голосовать нельзя. Даже если ты гений.",
-    grandSelfVote: "За свою финальную шутку голосовать нельзя. Даже если это шутка вечера."
+    grandSelfVote: "За свою финальную шутку голосовать нельзя. Даже если это шутка вечера.",
+    banned: "Вы забанены в этом лобби.",
+    targetMissing: "Игрок не найден.",
+    cannotKickHost: "Сначала передайте роль хоста другому игроку.",
+    cannotBanHost: "Хоста нельзя забанить. Сначала передайте хоста.",
+    roleLocked: "Хост пока не дал возможность менять роль.",
+    activePlayersFull: "Свободных мест игрока нет."
   },
   fallbackAnswer: "не успел придумать смешную концовку",
   fallbackPlayer: "аноним из оперативки",
@@ -104,7 +110,14 @@ const COPY = {
     hostChanged: (name) => `${name} теперь хост лобби.`,
     disconnected: (name) => `${name} отключился.`,
     left: (name) => `${name} вышел из лобби.`,
-    deleted: "Хост удалил лобби."
+    deleted: "Хост удалил лобби.",
+    kicked: "Вас кикнули из лобби.",
+    banned: "Вас забанили в этом лобби.",
+    movedToSpectator: (name) => `${name} теперь наблюдатель.`,
+    movedToPlayer: (name) => `${name} теперь игрок.`,
+    choiceUnlocked: (name) => `${name} снова может выбрать роль.`,
+    kickedPlayer: (name) => `${name} кикнут из лобби.`,
+    bannedPlayer: (name) => `${name} забанен в лобби.`
   },
   titles: [
     { title: "Машина юмора", note: "набрал больше всех очков" },
@@ -351,12 +364,63 @@ const PLAYER_PROMPT_PACKS = {
   ]
 };
 
-function getPromptPackList(packName = "mixed") {
-  if (packName && packName !== "mixed" && PROMPT_PACKS[packName]) return PROMPT_PACKS[packName];
-  return Object.values(PROMPT_PACKS).flat();
+const CUSTOM_PROMPT_PACK_LIMIT = 2;
+const CUSTOM_PROMPTS_PER_PACK_LIMIT = 80;
+const CUSTOM_PACK_NAME_LIMIT = 36;
+
+function normalizePackId(value = "") {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "")
+    .slice(0, 32);
 }
 
-function getPlayerPromptPackList(packName = "mixed") {
+function sanitizeCustomPromptPacks(raw = []) {
+  const seen = new Set();
+  return safeArray(raw)
+    .slice(0, CUSTOM_PROMPT_PACK_LIMIT)
+    .map((pack, index) => {
+      const baseId = normalizePackId(pack?.id) || `custom_${index + 1}`;
+      let id = baseId;
+      let suffix = 2;
+      while (seen.has(id)) {
+        id = normalizePackId(`${baseId}_${suffix}`);
+        suffix += 1;
+      }
+      seen.add(id);
+
+      const name = cleanText(pack?.name || `Свой пак ${index + 1}`, CUSTOM_PACK_NAME_LIMIT) || `Свой пак ${index + 1}`;
+      const prompts = safeArray(pack?.prompts)
+        .map((line) => cleanText(line, PROMPT_MAX_LENGTH))
+        .filter(Boolean)
+        .slice(0, CUSTOM_PROMPTS_PER_PACK_LIMIT);
+
+      return prompts.length ? { id, name, prompts } : null;
+    })
+    .filter(Boolean);
+}
+
+function getCustomPromptPack(room, packName = "") {
+  const match = String(packName || "").match(/^custom:([a-z0-9_-]+)$/i);
+  if (!match) return null;
+  const id = normalizePackId(match[1]);
+  return safeArray(room?.settings?.customPromptPacks).find((pack) => pack.id === id) || null;
+}
+
+function getPromptPackList(packName = "mixed", room = null) {
+  const customPack = getCustomPromptPack(room, packName);
+  if (customPack) return customPack.prompts;
+  if (packName && packName !== "mixed" && PROMPT_PACKS[packName]) return PROMPT_PACKS[packName];
+  return [
+    ...Object.values(PROMPT_PACKS).flat(),
+    ...safeArray(room?.settings?.customPromptPacks).flatMap((pack) => safeArray(pack.prompts))
+  ];
+}
+
+function getPlayerPromptPackList(packName = "mixed", room = null) {
+  const customPack = getCustomPromptPack(room, packName);
+  if (customPack) return [];
   if (packName && packName !== "mixed" && PLAYER_PROMPT_PACKS[packName]) return PLAYER_PROMPT_PACKS[packName];
   return Object.values(PLAYER_PROMPT_PACKS).flat();
 }
@@ -696,8 +760,8 @@ function generateRoomCode() {
 
 function pickAutoPrompt(index = 0, room = null, options = {}) {
   const packName = room?.settings?.promptPack || "mixed";
-  const staticPack = getPromptPackList(packName);
-  const playerPack = room ? getPlayerPromptPackList(packName) : [];
+  const staticPack = getPromptPackList(packName, room);
+  const playerPack = room ? getPlayerPromptPackList(packName, room) : [];
   const connectedPlayers = room ? getConnectedPlayers(room) : [];
 
   // Если в лобби есть игроки, даём динамическим шаблонам больший вес:
@@ -714,8 +778,20 @@ function randomItem(items) {
   return items[Math.floor(Math.random() * items.length)];
 }
 
+function getConnectedParticipants(room) {
+  return safeArray(room.players).filter((player) => player.connected);
+}
+
 function getConnectedPlayers(room) {
-  return room.players.filter((player) => player.connected);
+  return safeArray(room.players).filter((player) => player.connected && player.role !== "spectator" && !player.banned);
+}
+
+function getRoomPlayer(room, playerId) {
+  return safeArray(room.players).find((player) => player.id === playerId);
+}
+
+function roomHasBan(room, sessionId) {
+  return safeArray(room.bannedSessionIds).includes(sessionId);
 }
 
 function getConnectedSpectators(room) {
@@ -723,6 +799,12 @@ function getConnectedSpectators(room) {
 }
 
 function normalizeSettings(raw = {}) {
+  const customPromptPacks = sanitizeCustomPromptPacks(raw.customPromptPacks);
+  const rawPackName = String(raw.promptPack || "mixed");
+  const customPackId = rawPackName.match(/^custom:([a-z0-9_-]+)$/i)?.[1];
+  const hasCustomPack = customPackId && customPromptPacks.some((pack) => pack.id === normalizePackId(customPackId));
+  const promptPack = PROMPT_PACKS[rawPackName] || rawPackName === "mixed" || hasCustomPack ? rawPackName : "mixed";
+
   return {
     maxRounds: clampNumber(raw.maxRounds, 1, 20, 5),
     timers: {
@@ -734,7 +816,8 @@ function normalizeSettings(raw = {}) {
       anonymousMode: Boolean(raw.anonymousMode),
       soundsEnabled: raw.soundsEnabled !== false,
       promptMode: raw.promptMode === "auto" || raw.promptMode === "mixed" ? raw.promptMode : "manual",
-      promptPack: PROMPT_PACKS[raw.promptPack] || raw.promptPack === "mixed" ? raw.promptPack : "mixed",
+      promptPack,
+      customPromptPacks,
       spectatorMode: raw.spectatorMode === false ? false : true,
       spectatorVoting: ["off", "reactions", "grandFinalOnly"].includes(raw.spectatorVoting) ? raw.spectatorVoting : "off",
       assignmentMode: raw.assignmentMode === "same" ? "same" : "different",
@@ -768,6 +851,9 @@ function createPlayer(socket, name, sessionId) {
     name,
     score: 0,
     connected: true,
+    role: "player",
+    roleLocked: false,
+    banned: false,
     totalVotesReceived: 0,
     bestSingleRoundVotes: 0,
     stats: {
@@ -871,11 +957,11 @@ function attachPlayerToSocket(socket, room, player) {
 }
 
 function scheduleEmptyRoomCleanup(room) {
-  if (getConnectedPlayers(room).length > 0 || room.emptyDeleteTimer) return;
+  if (getConnectedParticipants(room).length > 0 || room.emptyDeleteTimer) return;
 
   room.emptyDeleteTimer = setTimeout(() => {
     const latest = rooms[room.code];
-    if (latest && getConnectedPlayers(latest).length === 0) {
+    if (latest && getConnectedParticipants(latest).length === 0) {
       clearRoomTimer(latest);
       delete rooms[room.code];
       emitOpenRooms();
@@ -886,7 +972,7 @@ function scheduleEmptyRoomCleanup(room) {
 function assignNewHostIfNeeded(room, leavingPlayerId = null) {
   if (room.hostId !== leavingPlayerId) return null;
 
-  const newHost = getConnectedPlayers(room)[0];
+  const newHost = getConnectedParticipants(room).find((item) => !item.banned);
   if (newHost) {
     room.hostId = newHost.id;
     return newHost;
@@ -963,7 +1049,7 @@ function leaveRoom(socket, notifySelf = true) {
     socket.emit("leftRoom");
   }
 
-  if (room.players.length === 0 || getConnectedPlayers(room).length === 0) {
+  if (room.players.length === 0 || getConnectedParticipants(room).length === 0) {
     clearRoomTimer(room);
     delete rooms[room.code];
     emitOpenRooms();
@@ -1720,6 +1806,7 @@ io.on("connection", (socket) => {
       settings: normalized.settings,
       players: [createPlayer(socket, cleanName, cleanSession)],
       spectators: [],
+      bannedSessionIds: [],
       promptCursor: 0,
       prompts: [],
       sharedPrompt: null,
@@ -1783,9 +1870,11 @@ io.on("connection", (socket) => {
 
     if (!cleanName) return emitError(socket, COPY.errors.emptyName);
     if (!room) return emitError(socket, COPY.errors.roomMissing);
+    if (roomHasBan(room, cleanSession)) return emitError(socket, COPY.errors.banned);
 
     const existingPlayer = room.players.find((player) => player.id === cleanSession);
     if (existingPlayer) {
+      if (existingPlayer.banned || roomHasBan(room, existingPlayer.id)) return emitError(socket, COPY.errors.banned);
       const wasDisconnected = !existingPlayer.connected;
       existingPlayer.name = cleanName;
       attachPlayerToSocket(socket, room, existingPlayer);
@@ -2070,6 +2159,116 @@ io.on("connection", (socket) => {
     io.to(room.code).emit("roomNotice", { message: `${spectator.name}: ${cleanEmoji}`, type: "reaction", createdAt: Date.now() });
   });
 
+
+  socket.on("setPlayerRole", ({ playerId, role, locked = true } = {}) => {
+    const room = rooms[socket.data.roomCode];
+    if (!ensureHost(socket, room)) return;
+    const target = getRoomPlayer(room, cleanSessionId(playerId));
+    if (!target || target.banned) return emitError(socket, COPY.errors.targetMissing);
+    const nextRole = role === "spectator" ? "spectator" : "player";
+
+    if (nextRole === "player" && target.role === "spectator" && getConnectedPlayers(room).length >= room.settings.maxPlayers) {
+      return emitError(socket, COPY.errors.activePlayersFull);
+    }
+
+    target.role = nextRole;
+    target.roleLocked = Boolean(locked);
+    logEvent(room, "set_player_role", socket.data.playerId, { targetId: target.id, role: nextRole, locked: target.roleLocked });
+    emitRoom(room);
+    emitNotice(room, nextRole === "spectator" ? COPY.notices.movedToSpectator(target.name) : COPY.notices.movedToPlayer(target.name), "role");
+    maybeAdvanceAfterPlayerLeave(room);
+    emitOpenRooms();
+  });
+
+  socket.on("chooseRole", ({ role } = {}) => {
+    const room = rooms[socket.data.roomCode];
+    const playerId = socket.data.playerId;
+    if (!room || !playerId) return;
+    if (room.settings.spectatorMode === false) return emitError(socket, "Режим зрителя выключен.");
+    if (room.state !== "waiting") return emitError(socket, "Роль можно менять только в лобби.");
+    const player = getRoomPlayer(room, playerId);
+    if (!player || player.banned) return;
+    if (player.roleLocked) return emitError(socket, COPY.errors.roleLocked);
+    const nextRole = role === "spectator" ? "spectator" : "player";
+    if (nextRole === "player" && player.role === "spectator" && getConnectedPlayers(room).length >= room.settings.maxPlayers) {
+      return emitError(socket, COPY.errors.activePlayersFull);
+    }
+    player.role = nextRole;
+    logEvent(room, "choose_role", playerId, { role: nextRole });
+    emitRoom(room);
+    emitNotice(room, nextRole === "spectator" ? COPY.notices.movedToSpectator(player.name) : COPY.notices.movedToPlayer(player.name), "role");
+    emitOpenRooms();
+  });
+
+  socket.on("unlockRoleChoice", ({ playerId } = {}) => {
+    const room = rooms[socket.data.roomCode];
+    if (!ensureHost(socket, room)) return;
+    const target = getRoomPlayer(room, cleanSessionId(playerId));
+    if (!target || target.banned) return emitError(socket, COPY.errors.targetMissing);
+    target.roleLocked = false;
+    logEvent(room, "unlock_role_choice", socket.data.playerId, { targetId: target.id });
+    emitRoom(room);
+    emitNotice(room, COPY.notices.choiceUnlocked(target.name), "role");
+  });
+
+  socket.on("transferHost", ({ playerId } = {}) => {
+    const room = rooms[socket.data.roomCode];
+    if (!ensureHost(socket, room)) return;
+    const target = getRoomPlayer(room, cleanSessionId(playerId));
+    if (!target || target.banned || !target.connected) return emitError(socket, COPY.errors.targetMissing);
+    room.hostId = target.id;
+    logEvent(room, "transfer_host", socket.data.playerId, { targetId: target.id });
+    emitRoom(room);
+    emitNotice(room, COPY.notices.hostChanged(target.name), "host");
+    emitOpenRooms();
+  });
+
+  socket.on("kickPlayer", ({ playerId } = {}) => {
+    const room = rooms[socket.data.roomCode];
+    if (!ensureHost(socket, room)) return;
+    const targetId = cleanSessionId(playerId);
+    const target = getRoomPlayer(room, targetId);
+    if (!target) return emitError(socket, COPY.errors.targetMissing);
+    if (target.id === room.hostId) return emitError(socket, COPY.errors.cannotKickHost);
+    const targetSocket = target.socketId ? io.sockets.sockets.get(target.socketId) : null;
+    if (targetSocket) {
+      targetSocket.emit("kickedFromRoom", { message: COPY.notices.kicked });
+      targetSocket.leave(room.code);
+      targetSocket.data.roomCode = null;
+      targetSocket.data.playerId = null;
+    }
+    room.players = room.players.filter((item) => item.id !== target.id);
+    logEvent(room, "kick_player", socket.data.playerId, { targetId: target.id });
+    emitRoom(room);
+    emitNotice(room, COPY.notices.kickedPlayer(target.name), "leave");
+    maybeAdvanceAfterPlayerLeave(room);
+    emitOpenRooms();
+  });
+
+  socket.on("banPlayer", ({ playerId } = {}) => {
+    const room = rooms[socket.data.roomCode];
+    if (!ensureHost(socket, room)) return;
+    const targetId = cleanSessionId(playerId);
+    const target = getRoomPlayer(room, targetId);
+    if (!target) return emitError(socket, COPY.errors.targetMissing);
+    if (target.id === room.hostId) return emitError(socket, COPY.errors.cannotBanHost);
+    if (!Array.isArray(room.bannedSessionIds)) room.bannedSessionIds = [];
+    if (!room.bannedSessionIds.includes(target.id)) room.bannedSessionIds.push(target.id);
+    const targetSocket = target.socketId ? io.sockets.sockets.get(target.socketId) : null;
+    if (targetSocket) {
+      targetSocket.emit("bannedFromRoom", { message: COPY.notices.banned });
+      targetSocket.leave(room.code);
+      targetSocket.data.roomCode = null;
+      targetSocket.data.playerId = null;
+    }
+    room.players = room.players.filter((item) => item.id !== target.id);
+    logEvent(room, "ban_player", socket.data.playerId, { targetId: target.id });
+    emitRoom(room);
+    emitNotice(room, COPY.notices.bannedPlayer(target.name), "leave");
+    maybeAdvanceAfterPlayerLeave(room);
+    emitOpenRooms();
+  });
+
   socket.on("restartGame", () => {
     const room = rooms[socket.data.roomCode];
     if (!ensureHost(socket, room)) return;
@@ -2145,7 +2344,7 @@ io.on("connection", (socket) => {
 
       let newHost = null;
       if (latest.hostId === playerId) {
-        newHost = getConnectedPlayers(latest)[0];
+        newHost = getConnectedParticipants(latest).find((item) => item.id !== playerId && !item.banned);
         if (newHost) {
           latest.hostId = newHost.id;
         }
